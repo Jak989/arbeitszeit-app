@@ -1,0 +1,354 @@
+</head>
+<body>
+  <!-- Pull-to-refresh indicator -->
+  <div class="ptr-indicator" id="ptrIndicator">
+    <span class="ptr-spinner"></span>
+    <span>Wird aktualisiert …</span>
+  </div>
+
+  <!-- iOS-style Action Sheet -->
+  <div class="sheet-overlay" id="sheetOverlay"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet-inner" id="sheetBody"></div>
+    <div class="sheet-cancel-gap"></div>
+    <div class="sheet-cancel">
+      <button class="sheet-btn cancel" onclick="hideSheet()">Abbrechen</button>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Keyboard accessory (Done button for number inputs) -->
+  <div class="input-accessory" id="inputAccessory">
+    <button class="btn-primary" onclick="dismissKeyboard()">Fertig</button>
+  </div>
+
+  <div class="app">
+    <section class="hero">
+      <div class="hero-top">
+        <div class="eyebrow">Arbeitszeit &amp; Trinkgeld</div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button class="theme-toggle" id="themeToggle" type="button" title="Dark Mode umschalten">
+            <span class="icon" id="themeIcon">☀️</span>
+            <span id="themeLabel">Hell</span>
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <div class="tabs-shell">
+      <nav class="tabs" aria-label="Bereiche">
+        <button class="tab-btn active" data-target="capture" type="button">
+          <span class="tab-icon">📝</span><span>Eintragen</span>
+        </button>
+        <button class="tab-btn" data-target="stats" type="button">
+          <span class="tab-icon">📊</span><span>Übersicht</span>
+        </button>
+        <button class="tab-btn" data-target="calendar" type="button">
+          <span class="tab-icon">📅</span><span>Kalender</span>
+        </button>
+        <button class="tab-btn" data-target="tip" type="button">
+          <span class="tab-icon">💶</span><span>Trinkgeld</span>
+        </button>
+        <button class="tab-btn" data-target="database" type="button">
+          <span class="tab-icon">🗄️</span><span>Datenbank</span>
+        </button>
+      </nav>
+    </div>
+
+    <!-- ═══ TAB: Eintragen ═══ -->
+    <section id="capture" class="tab-panel active">
+      <div class="card">
+        <h2>Schicht erfassen</h2>
+        <p class="section-copy">Schnell rein damit. Ohne Umwege, ohne Gefummel.</p>
+        <div class="grid stats-grid">
+          <div>
+            <label for="date">Datum</label>
+            <input id="date" type="date" />
+          </div>
+          <div>
+            <label for="hours">Gearbeitete Stunden</label>
+            <input id="hours" type="text" inputmode="decimal" placeholder="z. B. 5,98" />
+          </div>
+          <div>
+            <label for="tipsInput">Trinkgeld (€) <span style="color:var(--muted);font-weight:400;">– optional</span></label>
+            <input id="tipsInput" type="text" inputmode="decimal" placeholder="z. B. 9,70" />
+          </div>
+          <div>
+            <label for="note">Notiz</label>
+            <input id="note" type="text" placeholder="z. B. Montag / Spätschicht" />
+          </div>
+        </div>
+        <div class="button-row">
+          <button id="saveBtn" class="btn-primary" type="button">Schicht speichern</button>
+        </div>
+        <div id="status" class="status">Lade Daten …</div>
+      </div>
+    </section>
+
+    <!-- ═══ TAB: Übersicht (Accordion) ═══ -->
+    <section id="stats" class="tab-panel">
+      <div id="overviewSkeleton">
+        <div class="skeleton-row quad">
+          <div class="skeleton skeleton-h60"></div>
+          <div class="skeleton skeleton-h60"></div>
+          <div class="skeleton skeleton-h60"></div>
+          <div class="skeleton skeleton-h60"></div>
+        </div>
+        <div class="skeleton skeleton-h200"></div>
+        <div class="skeleton-row horiz">
+          <div class="skeleton skeleton-h120"></div>
+          <div class="skeleton skeleton-h120"></div>
+        </div>
+      </div>
+
+      <div id="overviewContent" style="display:none">
+
+        <!-- 1 · Gesamtübersicht (offen) -->
+        <div class="acc open" data-acc>
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">📊</span>Gesamtübersicht</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <div class="grid stats-grid" id="overviewStats"></div>
+          </div>
+        </div>
+
+        <!-- 2 · Diese Woche / Letzter Eintrag -->
+        <div class="acc" data-acc>
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">🗓️</span>Aktuelle Woche</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <div class="grid stats-grid" id="weekFocus" style="margin-bottom:12px;"></div>
+            <div id="lastShiftCard"></div>
+          </div>
+        </div>
+
+        <!-- 3 · Zeitverlauf -->
+        <div class="acc" data-acc>
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">📈</span>Zeitverlauf</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <div class="chart-legend">
+              <span><span class="legend-dot" style="background:#0a84ff;"></span>Stunden</span>
+              <span><span class="legend-dot" style="background:#ffd60a;"></span>Trinkgeld</span>
+            </div>
+            <div class="chart-tools" style="margin-bottom:8px;">
+              <div>
+                <label for="trendMode" style="font-size:11px;">Filter</label>
+                <select id="trendMode" style="font-size:13px;padding:4px 8px;">
+                  <option value="week">Diese Woche</option>
+                  <option value="kw">KW auswählen</option>
+                  <option value="month">Monat</option>
+                  <option value="all">Alles</option>
+                </select>
+              </div>
+              <div id="trendWeekWrap" style="display:none;">
+                <label for="trendWeek" style="font-size:11px;">KW</label>
+                <select id="trendWeek" style="font-size:13px;padding:4px 8px;"></select>
+              </div>
+              <div id="trendMonthWrap" style="display:none;">
+                <label for="trendMonth" style="font-size:11px;">Monat</label>
+                <input id="trendMonth" type="month" style="font-size:13px;padding:4px 8px;" />
+              </div>
+            </div>
+            <div style="position:relative;">
+              <svg id="trendChart" style="width:100%;height:auto;display:block;background:var(--card);border-radius:var(--radius-md);" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet"></svg>
+              <div id="barTooltip" style="display:none;position:absolute;background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px 14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:9999;pointer-events:none;text-align:center;white-space:nowrap;"><div style="font-size:11px;color:#98989d;margin-bottom:2px" id="btDate"></div><div style="font-size:22px;font-weight:800;line-height:1.1" id="btHours"></div><div style="font-size:11px;color:#98989d;margin-top:1px">Stunden</div><div style="font-size:20px;font-weight:800;line-height:1.1;margin-top:6px;color:#ffd60a" id="btTips"></div><div style="font-size:11px;color:#98989d;margin-top:1px">Trinkgeld</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4 · Kennzahlen -->
+        <div class="acc" data-acc>
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">🔢</span>Kennzahlen</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <div class="grid stats-grid" id="analysisStats"></div>
+          </div>
+        </div>
+
+        <!-- 5 · KW-Vergleich -->
+        <div class="acc" data-acc>
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">📅</span>KW-Vergleich</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <div class="bars" id="weekBars"></div>
+          </div>
+        </div>
+
+        <!-- 6 · Monatsübersicht -->
+        <div class="acc" data-acc>
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">💰</span>Monatsübersicht</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <p class="section-copy" style="margin-top:0;">Monatliche Auswertung mit Brutto-Gehalt (13,90&nbsp;€/h). Urlaubstage werden mit dem 30-Tage-Schnitt angesetzt.</p>
+            <div class="table-wrap" style="margin-bottom:0;">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Monat</th>
+                    <th class="right">Stunden</th>
+                    <th class="right">Urlaub</th>
+                    <th class="right">Trinkgeld</th>
+                    <th class="right">Ø/h</th>
+                    <th class="right">Brutto</th>
+                    <th class="right">Netto</th>
+                    <th class="right">IST-Netto</th>
+                    <th class="right">Diff</th>
+                    <th class="right">Gesamt</th>
+                  </tr>
+                </thead>
+                <tbody id="overviewMonthlyBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ═══ TAB: Kalender ═══ -->
+    <section id="calendar" class="tab-panel">
+      <div class="card">
+        <div class="cal-head">
+          <button class="cal-nav" id="calPrev" type="button">‹</button>
+          <div class="cal-title" id="calTitle">—</div>
+          <button class="cal-nav" id="calNext" type="button">›</button>
+        </div>
+        <div class="cal-legend">
+          <span><span class="cal-dot" style="background:#30d158;"></span>Arbeitstag</span>
+          <span><span class="cal-dot" style="background:#0a84ff;"></span>Urlaub bezahlt</span>
+          <span><span class="cal-dot" style="background:#ff9f0a;"></span>Urlaub unbezahlt</span>
+        </div>
+        <div class="cal-grid cal-dow">
+          <div>Mo</div><div>Di</div><div>Mi</div><div>Do</div><div>Fr</div><div>Sa</div><div>So</div>
+        </div>
+        <div class="cal-grid" id="calGrid"></div>
+      </div>
+
+      <div class="card" id="calSummaryCard">
+        <h2>Monat auf einen Blick</h2>
+        <div class="grid stats-grid" id="calSummary"></div>
+      </div>
+
+      <div class="card">
+        <h2>Urlaubstage</h2>
+        <p class="section-copy">Tippe einen Tag im Kalender an, um Urlaub zu setzen.</p>
+        <div class="grid stats-grid" id="leaveStats"></div>
+      </div>
+
+      <div class="card">
+        <h2>Urlaubsübersicht</h2>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Tag</th><th>Art</th><th>Aktion</th></tr></thead>
+            <tbody id="leaveTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+
+    <!-- ═══ TAB: Trinkgeld ═══ -->
+    <section id="tip" class="tab-panel">
+
+      <!-- Einmaliges Setup -->
+      <div class="card" id="tipSetupCard">
+        <h2>Trinkgeld einrichten</h2>
+        <p class="section-copy">Einmal einrichten — danach reicht ein Tap, und der Kunde scannt nur noch.</p>
+
+        <label for="tipPaypal">Dein PayPal-Link</label>
+        <input id="tipPaypal" type="text" inputmode="url" placeholder="paypal.me/DeinName" />
+        <p class="tip-hint">In der PayPal-App: Profil → „Geld empfangen" → dort steht dein <strong>paypal.me</strong>-Link. Nur diesen Namen eintragen oder die ganze Adresse — beides geht.</p>
+
+        <label for="tipName" style="margin-top:14px;">Dein Name (optional, für die Anzeige)</label>
+        <input id="tipName" type="text" placeholder="z. B. Max" />
+
+        <div class="button-row">
+          <button class="btn-primary" type="button" onclick="saveTipSettings()">Speichern</button>
+        </div>
+        <div id="tipSetupStatus" class="status"></div>
+      </div>
+
+      <!-- QR-Code Anzeige -->
+      <div class="card" id="tipQrCard" style="display:none;">
+        <h2 id="tipQrHead">Trinkgeld geben</h2>
+        <p class="section-copy">Kunde scannt den Code — kommt direkt zu PayPal. Keine App, kein Konto nötig.</p>
+
+        <!-- Betrag wählen -->
+        <div class="tip-amounts" id="tipAmounts"></div>
+
+        <!-- QR -->
+        <div class="tip-qr-wrap">
+          <div id="tipQr"></div>
+          <div class="tip-qr-caption" id="tipQrCaption"></div>
+        </div>
+
+        <div class="button-row">
+          <button class="btn-secondary" type="button" onclick="openTipInApp()">In PayPal öffnen</button>
+          <button class="btn-secondary" type="button" onclick="editTipSettings()">Einstellungen</button>
+        </div>
+      </div>
+
+      <!-- Statistik (kompakt, unter dem QR) -->
+      <div class="card" id="tipStatsCard" style="display:none;">
+        <h2>Trinkgeld-Überblick</h2>
+        <div class="grid stats-grid" id="tipStats"></div>
+      </div>
+
+    </section>
+
+    <!-- ═══ TAB: Datenbank ═══ -->
+    <section id="database" class="tab-panel">
+      <div class="card">
+        <h2>CSV Import / Export</h2>
+        <p class="section-copy">Alle Daten in <strong>einer</strong> Datei: Schichten, Trinkgeld, Notizen und Urlaubstage. Die CSV lässt sich in Excel öffnen und wieder einlesen.</p>
+        <div class="button-row">
+          <button onclick="exportCSV()" class="btn-secondary" type="button">📥 CSV exportieren</button>
+          <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">📤 CSV importieren</button>
+          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
+        </div>
+        <div id="csvImportStatus" class="status"></div>
+        <p class="section-copy" style="margin-top:10px;font-size:12px;color:var(--muted);">Tipp: Die Datei landet im Ordner <strong>Downloads</strong> — von dort kannst du sie in Drive, Nextcloud oder per Mail sichern.</p>
+      </div>
+
+      <div class="card">
+        <h2>Alle Einträge</h2>
+        <p class="section-copy">Die vollständige Liste aller gespeicherten Schichten.</p>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>KW</th>
+                <th>Tag</th>
+                <th>Datum</th>
+                <th class="right">Stunden</th>
+                <th class="right">Trinkgeld</th>
+                <th>Notiz</th>
+                <th>Aktion</th>
+              </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Hidden backdrop for keyboard accessory visibility detection -->
+    <div id="keyboardDetect" style="position:fixed;bottom:-9999px;left:0;width:1px;height:1px;pointer-events:none;"></div>
+
+  </div>
+
