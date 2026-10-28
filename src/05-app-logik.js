@@ -642,24 +642,53 @@
         rightLabels.push(`<text x="${W - pad.right + 6}" y="${yTip(v) + 5}" fill="${textColor}" font-size="16" font-family="Inter,system-ui,-apple-system,sans-serif" text-anchor="start">${v}€</text>`);
       }
 
-      // Milde Kurven: Catmull-Rom → Bezier (weiche Rundung, Daten bleiben exakt)
+      /* Kurvenverlauf: bewusst zurückhaltend, damit die Linie die echten Werte zeigt.
+       *
+       * Vorher: Catmull-Rom mit Kontrollpunkten aus den NACHBARN (p0, p3) und Faktor 1/12.
+       * Problem: bei einem Ausreißer zog die Kurve über die Nachbarpunkte hinaus —
+       * sie lief also über Werte, die es nie gab ("extrapoliert").
+       *
+       * Jetzt: monotone kubische Interpolation (Fritsch-Carlson), wie sie auch
+       * Diagramm-Bibliotheken für Messwerte verwenden. Die Steigung wird so begrenzt,
+       * dass zwischen zwei Punkten nie ein Wert entsteht, der außerhalb der beiden
+       * liegt. Damit schwingt nichts mehr über und die Kurve bleibt an der Realität.
+       */
       function buildSmoothPath(rows, getVal, yFn) {
-        if (rows.length < 2) {
-          const x = getX(0), y = yFn(getVal(rows[0]));
-          return `M${x},${y}`;
-        }
         const pts = rows.map((r, i) => ({ x: getX(i), y: yFn(getVal(r)) }));
+
+        if (pts.length === 1) return `M${pts[0].x},${pts[0].y}`;
+        if (pts.length === 2) return `M${pts[0].x},${pts[0].y} L${pts[1].x},${pts[1].y}`;
+
+        // Steigungen zwischen den Punkten (Sekanten)
+        const dx = [], dy = [], slope = [];
+        for (let i = 0; i < pts.length - 1; i++) {
+          dx[i] = pts[i + 1].x - pts[i].x;
+          dy[i] = pts[i + 1].y - pts[i].y;
+          slope[i] = dx[i] === 0 ? 0 : dy[i] / dx[i];
+        }
+
+        // Tangenten nach Fritsch-Carlson: begrenzt, damit kein Überschwingen entsteht
+        const tan = new Array(pts.length);
+        tan[0] = slope[0];
+        tan[pts.length - 1] = slope[slope.length - 1];
+        for (let i = 1; i < pts.length - 1; i++) {
+          if (slope[i - 1] * slope[i] <= 0) {
+            tan[i] = 0;                        // Richtungswechsel → waagerecht (Extrempunkt)
+          } else {
+            const m = (slope[i - 1] + slope[i]) / 2;
+            const limit = 3 * Math.min(Math.abs(slope[i - 1]), Math.abs(slope[i]));
+            tan[i] = Math.sign(m) * Math.min(Math.abs(m), limit);
+          }
+        }
+
         let d = `M${pts[0].x},${pts[0].y}`;
         for (let i = 0; i < pts.length - 1; i++) {
-          const p0 = pts[Math.max(0, i - 1)];
-          const p1 = pts[i];
-          const p2 = pts[i + 1];
-          const p3 = pts[Math.min(pts.length - 1, i + 2)];
-          const cp1x = p1.x + (p2.x - p0.x) / 12;
-          const cp1y = p1.y + (p2.y - p0.y) / 12;
-          const cp2x = p2.x - (p3.x - p1.x) / 12;
-          const cp2y = p2.y - (p3.y - p1.y) / 12;
-          d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${p2.x},${p2.y}`;
+          const h = dx[i] / 3;
+          const cp1x = pts[i].x + h;
+          const cp1y = pts[i].y + tan[i] * h;
+          const cp2x = pts[i + 1].x - h;
+          const cp2y = pts[i + 1].y - tan[i + 1] * h;
+          d += ` C${cp1x},${cp1y} ${cp2x},${cp2y} ${pts[i + 1].x},${pts[i + 1].y}`;
         }
         return d;
       }

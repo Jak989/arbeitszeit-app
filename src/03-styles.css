@@ -241,14 +241,14 @@
       color: var(--muted);
       font-size: 11px;
       font-weight: 700;
-      padding: 9px 2px;
+      padding: 12px 2px;
       cursor: pointer;
       transition: all .25s var(--spring-out);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2px;
+      gap: 0;
       white-space: nowrap;
       -webkit-user-select: none;
       user-select: none;
@@ -265,7 +265,22 @@
     [data-theme="dark"] .tab-btn.active {
       box-shadow: 0 8px 18px rgba(10,132,255,.35);
     }
-    .tab-btn .tab-icon { font-size: 14px; line-height: 1; }
+    /* Icons: reine Strichzeichnung, erben die Textfarbe des Buttons (Schwarz/Weiß) */
+    .tab-btn .tab-icon {
+      width: 24px;
+      height: 24px;
+      display: block;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.7;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+    /* Aktiver Tab: Icon in Weiß, damit es auf der Akzentfarbe lesbar bleibt */
+    .tab-btn.active .tab-icon {
+      stroke: #fff;
+    }
 
     /* ── Tab panel transitions ── */
     .tab-panel {
@@ -1159,16 +1174,16 @@
     @media (max-width: 860px) {
       .two-col { grid-template-columns: 1fr; }
       .tabs { gap: 3px; padding: 4px; }
-      .tab-btn { font-size: 11px; padding: 7px 3px; gap: 3px; }
-      .tab-btn .tab-icon { font-size: 13px; }
+      .tab-btn { padding: 10px 3px; }
+      .tab-btn .tab-icon { width: 22px; height: 22px; }
       .bar-row { grid-template-columns: 66px 1fr 84px; }
       .button-row button { width: 100%; }
       .app { padding-left: 12px; padding-right: 12px; }
     }
     @media (max-width: 480px) {
       .tabs { gap: 2px; padding: 3px; }
-      .tab-btn { font-size: 10px; padding: 6px 2px; gap: 2px; }
-      .tab-btn .tab-icon { font-size: 12px; }
+      .tab-btn { padding: 9px 2px; }
+      .tab-btn .tab-icon { width: 21px; height: 21px; }
     }
 
     /* ── Reduced motion ── */
