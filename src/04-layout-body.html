@@ -61,23 +61,24 @@
     <section id="capture" class="tab-panel active">
       <div class="card">
         <h2>Schicht erfassen</h2>
-        <p class="section-copy">Schnell rein damit. Ohne Umwege, ohne Gefummel.</p>
-        <div class="grid stats-grid">
+        <div class="cap-grid">
           <div>
             <label for="date">Datum</label>
             <input id="date" type="date" />
           </div>
           <div>
-            <label for="hours">Gearbeitete Stunden</label>
-            <input id="hours" type="text" inputmode="decimal" placeholder="z. B. 5,98" />
+            <label for="hours">Stunden</label>
+            <input id="hours" type="text" inputmode="decimal" placeholder="5,98" />
           </div>
+        </div>
+        <div class="cap-grid cap-grid-equal">
           <div>
-            <label for="tipsInput">Trinkgeld (€) <span style="color:var(--muted);font-weight:400;">– optional</span></label>
-            <input id="tipsInput" type="text" inputmode="decimal" placeholder="z. B. 9,70" />
+            <label for="tipsInput">Trinkgeld (€)</label>
+            <input id="tipsInput" type="text" inputmode="decimal" placeholder="9,70" />
           </div>
           <div>
             <label for="note">Notiz</label>
-            <input id="note" type="text" placeholder="z. B. Montag / Spätschicht" />
+            <input id="note" type="text" placeholder="Spätschicht" />
           </div>
         </div>
         <div class="button-row">
@@ -129,7 +130,7 @@
         <!-- 2 · Kennzahlen (zugeklappt, Detailtiefe) -->
         <div class="acc" data-acc>
           <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">🔢</span>Weitere Kennzahlen</span>
+            <span class="acc-title">Weitere Kennzahlen</span>
             <span class="acc-chev">›</span>
           </button>
           <div class="acc-body">
@@ -140,7 +141,7 @@
         <!-- 3 · Diese Woche / Letzter Eintrag -->
         <div class="acc" data-acc>
           <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">🗓️</span>Aktuelle Woche</span>
+            <span class="acc-title">Aktuelle Woche</span>
             <span class="acc-chev">›</span>
           </button>
           <div class="acc-body">
@@ -152,7 +153,7 @@
         <!-- 3 · Zeitverlauf -->
         <div class="acc" data-acc>
           <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">📈</span>Zeitverlauf</span>
+            <span class="acc-title">Zeitverlauf</span>
             <span class="acc-chev">›</span>
           </button>
           <div class="acc-body">
@@ -180,7 +181,7 @@
               </div>
             </div>
             <div style="position:relative;">
-              <svg id="trendChart" style="width:100%;height:auto;display:block;background:var(--card);border-radius:var(--radius-md);" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet"></svg>
+              <svg id="trendChart" style="width:100%;height:auto;display:block;" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet"></svg>
               <div id="barTooltip" style="display:none;position:absolute;background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px 14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:9999;pointer-events:none;text-align:center;white-space:nowrap;"><div style="font-size:11px;color:#98989d;margin-bottom:2px" id="btDate"></div><div style="font-size:22px;font-weight:800;line-height:1.1" id="btHours"></div><div style="font-size:11px;color:#98989d;margin-top:1px">Stunden</div><div style="font-size:20px;font-weight:800;line-height:1.1;margin-top:6px;color:#ffd60a" id="btTips"></div><div style="font-size:11px;color:#98989d;margin-top:1px">Trinkgeld</div></div>
             </div>
           </div>
@@ -189,7 +190,7 @@
         <!-- 5 · KW-Vergleich -->
         <div class="acc" data-acc>
           <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">📅</span>KW-Vergleich</span>
+            <span class="acc-title">Wochenvergleich</span>
             <span class="acc-chev">›</span>
           </button>
           <div class="acc-body">
@@ -200,11 +201,10 @@
         <!-- 6 · Monatsübersicht -->
         <div class="acc" data-acc>
           <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">💰</span>Monatsübersicht</span>
+            <span class="acc-title">Monatsübersicht</span>
             <span class="acc-chev">›</span>
           </button>
           <div class="acc-body">
-            <p class="section-copy" style="margin-top:0;">Monatliche Auswertung mit Brutto-Gehalt (13,90&nbsp;€/h). Urlaubstage werden mit dem 30-Tage-Schnitt angesetzt.</p>
             <div class="table-wrap" style="margin-bottom:0;">
               <table>
                 <thead>
@@ -252,39 +252,42 @@
 
       <div class="card" id="calUpcomingCard">
         <h2>Nächste Schichten</h2>
-        <p class="section-copy">Automatisch aus deinem Kalender-Link — tippe einen Tag an, um die Schicht direkt zu übernehmen.</p>
         <div id="calUpcoming"></div>
       </div>
 
-      <div class="card" id="calMonthShiftsCard">
-        <h2>Geplante Schichten im Monat</h2>
-        <p class="section-copy">Aus dem Kalender, mit geschätztem Brutto. Angetippt = Schicht nachtragen.</p>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Datum</th><th>Schicht</th><th class="right">Zeit</th><th class="right">≈ Std</th><th class="right">≈ Brutto</th></tr></thead>
-            <tbody id="calMonthShiftsBody"></tbody>
-          </table>
+      <div class="card" id="calSummaryCard">
+        <h2>Monat</h2>
+        <div class="grid stats-grid" id="calSummary"></div>
+        <div class="grid stats-grid" id="leaveStats" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="acc" data-acc id="calMonthShiftsCard">
+        <button class="acc-head" type="button">
+          <span class="acc-title">Geplante Schichten im Monat</span>
+          <span class="acc-chev">›</span>
+        </button>
+        <div class="acc-body">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Datum</th><th>Schicht</th><th class="right">Zeit</th><th class="right">≈ Std</th><th class="right">≈ Brutto</th></tr></thead>
+              <tbody id="calMonthShiftsBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
 
-      <div class="card" id="calSummaryCard">
-        <h2>Monat auf einen Blick</h2>
-        <div class="grid stats-grid" id="calSummary"></div>
-      </div>
-
-      <div class="card">
-        <h2>Urlaubstage</h2>
-        <p class="section-copy">Tippe einen Tag im Kalender an, um Urlaub zu setzen.</p>
-        <div class="grid stats-grid" id="leaveStats"></div>
-      </div>
-
-      <div class="card">
-        <h2>Urlaubsübersicht</h2>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Datum</th><th>Tag</th><th>Art</th><th>Aktion</th></tr></thead>
-            <tbody id="leaveTableBody"></tbody>
-          </table>
+      <div class="acc" data-acc>
+        <button class="acc-head" type="button">
+          <span class="acc-title">Urlaubsübersicht</span>
+          <span class="acc-chev">›</span>
+        </button>
+        <div class="acc-body">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Datum</th><th>Tag</th><th>Art</th><th>Aktion</th></tr></thead>
+              <tbody id="leaveTableBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
     </section>
@@ -296,25 +299,28 @@
       <!-- Einmaliges Setup -->
       <div class="card" id="tipSetupCard">
         <h2>Trinkgeld einrichten</h2>
-        <p class="section-copy">Einmal einrichten — danach reicht ein Tap, und der Kunde scannt nur noch.</p>
+        <p class="section-copy">Einmal einrichten, danach reicht ein Tap und der Kunde scannt nur noch.</p>
 
         <label for="tipPaypal">Dein PayPal-Link</label>
         <input id="tipPaypal" type="text" inputmode="url" placeholder="paypal.me/DeinName" />
-        <p class="tip-hint">In der PayPal-App: Profil → „Geld empfangen" → dort steht dein <strong>paypal.me</strong>-Link. Nur diesen Namen eintragen oder die ganze Adresse — beides geht.</p>
 
-        <label for="tipName" style="margin-top:14px;">Dein Name (optional, für die Anzeige)</label>
+        <label for="tipName" style="margin-top:10px;">Dein Name (optional)</label>
         <input id="tipName" type="text" placeholder="z. B. Max" />
 
         <div class="button-row">
           <button class="btn-primary" type="button" onclick="saveTipSettings()">Speichern</button>
         </div>
         <div id="tipSetupStatus" class="status"></div>
+        <details class="hint-details">
+          <summary>Wo finde ich meinen PayPal-Link?</summary>
+          <p>In der PayPal-App: Profil → „Geld empfangen" → dort steht dein <strong>paypal.me</strong>-Link.
+          Du kannst den Namen oder die ganze Adresse eintragen — beides geht.</p>
+        </details>
       </div>
 
       <!-- QR-Code Anzeige -->
-      <div class="card" id="tipQrCard" style="display:none;">
+      <div class="card tip-qr-card" id="tipQrCard" style="display:none;">
         <h2 id="tipQrHead">Trinkgeld geben</h2>
-        <p class="section-copy">Kunde scannt den Code — kommt direkt zu PayPal. Keine App, kein Konto nötig.</p>
 
         <!-- Betrag wählen -->
         <div class="tip-amounts" id="tipAmounts"></div>
@@ -324,6 +330,8 @@
           <div id="tipQr"></div>
           <div class="tip-qr-caption" id="tipQrCaption"></div>
         </div>
+
+        <p class="tip-qr-hint">Kunde scannt den Code, kommt direkt zu PayPal.</p>
 
         <div class="button-row">
           <button class="btn-secondary" type="button" onclick="openTipInApp()">In PayPal öffnen</button>
@@ -341,48 +349,54 @@
 
     <!-- ═══ TAB: Datenbank ═══ -->
     <section id="database" class="tab-panel">
-      <div class="card">
-        <h2>CSV Import / Export</h2>
-        <p class="section-copy">Alle Daten in <strong>einer</strong> Datei: Schichten, Trinkgeld, Notizen und Urlaubstage. Die CSV lässt sich in Excel öffnen und wieder einlesen.</p>
-        <div class="button-row">
-          <button onclick="exportCSV()" class="btn-secondary" type="button">📥 CSV exportieren</button>
-          <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">📤 CSV importieren</button>
-          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
-        </div>
-        <div id="csvImportStatus" class="status"></div>
-        <p class="section-copy" style="margin-top:10px;font-size:12px;color:var(--muted);">Tipp: Die Datei landet im Ordner <strong>Downloads</strong> — von dort kannst du sie in Drive, Nextcloud oder per Mail sichern.</p>
-      </div>
 
       <div class="card" id="calLinkCard">
         <h2>Kalender-Link</h2>
-        <p class="section-copy">Schichten aus deinem Dienstplan-Kalender (iCal/.ics — Google, iCloud, Outlook, Nextcloud). Der Link ist nur lesbar, nichts wird dort verändert.</p>
         <label for="icalUrl">iCal-/ICS-Link</label>
-        <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://…/basic.ics oder webcal://…" />
-        <p class="tip-hint">Google Kalender: Einstellungen → Kalender → „Geheime Adresse im iCal-Format". Der Link bleibt geheim — nicht weitergeben.</p>
-        <label for="icalMinShift" style="margin-top:14px;">Ab wie vielen Stunden gilt ein Termin als Schicht?</label>
-        <input id="icalMinShift" type="text" inputmode="decimal" placeholder="4" />
-        <p class="tip-hint">Kurze Termine (Meeting, Arzt) werden so herausgefiltert. Ganztägige Einträge wie „Urlaub" zählen nie als Schicht.</p>
+        <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://… oder webcal://…" />
+        <div class="cap-grid-equal cap-grid" style="margin-top:10px;">
+          <div>
+            <label for="icalMinShift">Min. Stunden pro Schicht</label>
+            <input id="icalMinShift" type="text" inputmode="decimal" placeholder="4" />
+          </div>
+        </div>
         <div class="button-row">
-          <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern &amp; laden</button>
-          <button class="btn-secondary" type="button" onclick="saveIcalMinShift()">Übernehmen</button>
-          <button class="btn-secondary" type="button" onclick="diagnoseIcal()">Feed prüfen</button>
-          <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Entfernen</button>
+          <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern</button>
+          <button class="btn-secondary" type="button" onclick="diagnoseIcal()">Prüfen</button>
         </div>
         <div id="icalStatus" class="status"></div>
+        <details class="hint-details">
+          <summary>Wie komme ich an den Link?</summary>
+          <p><strong>Tanda:</strong> App → Profilfoto → Einstellungen → „Calendar Link" → Kopieren.<br>
+          <strong>Google Kalender:</strong> Einstellungen → Kalender → „Geheime Adresse im iCal-Format".<br>
+          Der Link ist nur lesbar und bleibt geheim.</p>
+          <div class="button-row">
+            <button class="btn-secondary" type="button" onclick="saveIcalMinShift()">Mindestdauer übernehmen</button>
+            <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Link entfernen</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>Sicherung</h2>
+        <div class="button-row">
+          <button onclick="exportCSV()" class="btn-secondary" type="button">CSV exportieren</button>
+          <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">CSV importieren</button>
+          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
+        </div>
+        <div id="csvImportStatus" class="status"></div>
       </div>
 
       <div class="card">
         <h2>Alle Einträge</h2>
-        <p class="section-copy">Die vollständige Liste aller gespeicherten Schichten.</p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>KW</th>
                 <th>Tag</th>
                 <th>Datum</th>
-                <th class="right">Stunden</th>
-                <th class="right">Trinkgeld</th>
+                <th class="right">Std</th>
+                <th class="right">TG</th>
                 <th>Notiz</th>
                 <th>Aktion</th>
               </tr>

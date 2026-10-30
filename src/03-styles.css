@@ -319,10 +319,10 @@
     .acc {
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: var(--radius-lg);
-      margin-bottom: 12px;
+      border-radius: var(--radius-md);
+      margin-bottom: 8px;
       overflow: hidden;
-      box-shadow: var(--shadow-sm);
+      box-shadow: none;
     }
     .acc-head {
       width: 100%;
@@ -330,12 +330,14 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 16px 18px;
+      padding: 14px 16px;
       background: none;
       border: none;
       cursor: pointer;
       font: inherit;
-      color: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
       text-align: left;
       -webkit-tap-highlight-color: transparent;
       transition: background .18s ease;
@@ -624,6 +626,11 @@
       color: var(--muted);
       line-height: 1.45;
     }
+    .si-note-plain {
+      margin-top: 10px;
+      font-size: 12.5px;
+    }
+    .si-note-plain strong { color: var(--text); }
     .si-empty { text-align: center; padding: 14px 8px 6px; }
     .si-empty-ico { font-size: 26px; margin-bottom: 6px; }
     .si-empty-title { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
@@ -661,6 +668,61 @@
       font-size: 11px;
       color: var(--muted);
       line-height: 1.45;
+    }
+
+    /* ── Kompaktes Erfassungsformular ── */
+    .cap-grid {
+      display: grid;
+      grid-template-columns: 1.3fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .cap-grid-equal { grid-template-columns: 1fr 1fr; }
+    .cap-actions {
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+    .cap-actions .btn-primary,
+    .cap-actions .btn-secondary { margin: 0; min-height: 44px; }
+    .row-sub { color: var(--muted); font-size: 10.5px; }
+
+    /* Aufklappbare Hilfe — ersetzt lange Erklärtexte */
+    .hint-details {
+      margin-top: 10px;
+      border-top: 1px solid var(--line);
+      padding-top: 10px;
+    }
+    .hint-details summary {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--accent);
+      cursor: pointer;
+      list-style: none;
+      padding: 10px 0 4px;
+      min-height: 40px;
+      display: flex;
+      align-items: center;
+    }
+    .hint-details summary::-webkit-details-marker { display: none; }
+    .hint-details summary::before { content: '? '; }
+    .hint-details p {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.55;
+      margin: 6px 0 10px;
+    }
+
+    /* Trinkgeld: QR im Zentrum, alles andere zurückhaltend */
+    .tip-qr-card { text-align: center; }
+    .tip-qr-card .tip-amounts,
+    .tip-qr-card .button-row { text-align: initial; }
+    .tip-qr-hint {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 10px;
+      line-height: 1.4;
     }
 
     /* Kompaktere Kennzahlen-Kacheln im Analyse-Tab */
@@ -854,18 +916,15 @@
 
     .card {
       background: var(--card);
-      border: 1px solid rgba(255,255,255,.6);
-      border-radius: var(--radius-lg);
-      box-shadow: 0 8px 32px rgba(0,0,0,.06);
-      backdrop-filter: blur(28px);
-      -webkit-backdrop-filter: blur(28px);
-      padding: 20px;
-      margin-bottom: 14px;
-      transition: background .35s ease, box-shadow .3s ease;
-      animation: cardIn .4s var(--spring-out) both;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-md);
+      box-shadow: none;
+      padding: 16px;
+      margin-bottom: 10px;
+      transition: background .3s ease, border-color .3s ease;
     }
     [data-theme="dark"] .card {
-      border-color: rgba(255,255,255,.06);
+      border-color: rgba(255,255,255,.07);
     }
     .card:nth-child(2) { animation-delay: .04s; }
     .card:nth-child(3) { animation-delay: .08s; }
@@ -893,22 +952,34 @@
     }
 
     .card h2 {
-      font-size: 24px;
-      letter-spacing: -.03em;
-      margin-bottom: 4px;
+      font-size: 14px;
+      font-weight: 700;
+      letter-spacing: .01em;
+      color: var(--muted);
+      margin-bottom: 10px;
+      text-transform: none;
+    }
+    /* Ausnahme: die Hero-Überschrift der Soll/Ist-Karte bleibt groß */
+    .sollist .si-head h2 {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      color: var(--text);
+      margin-bottom: 0;
     }
 
     .section-copy {
       color: var(--muted);
-      font-size: 14px;
-      margin-bottom: 14px;
+      font-size: 12.5px;
+      line-height: 1.45;
+      margin-bottom: 12px;
     }
 
     .metric {
-      background: rgba(255,255,255,.84);
+      background: transparent;
       border: 1px solid var(--line);
-      border-radius: var(--radius-md);
-      padding: 16px;
+      border-radius: var(--radius-sm);
+      padding: 11px 12px;
       transition: background .3s ease, border-color .3s ease;
     }
     [data-theme="dark"] .metric {

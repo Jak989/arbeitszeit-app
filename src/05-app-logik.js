@@ -534,8 +534,10 @@
       let html = `<div class="si-figures">
         <div class="si-fig">
           <div class="si-fig-label">Geplant</div>
-          <div class="si-fig-value">${hrs(d.sollHoursGesamt)}</div>
-          <div class="si-fig-hint">${d.planDraft.length ? `davon ${hrs(d.draftHours)} unbestätigt` : `${d.offen.length} offen`}</div>
+          <div class="si-fig-value">${d.sollHoursGesamt > 0 ? hrs(d.sollHoursGesamt) : '—'}</div>
+          <div class="si-fig-hint">${d.sollHoursGesamt > 0
+            ? (d.planDraft.length ? `davon ${hrs(d.draftHours)} unbestätigt` : `${d.offen.length} offen`)
+            : 'kein Plan'}</div>
         </div>
         <div class="si-fig">
           <div class="si-fig-label">Gearbeitet</div>
@@ -547,9 +549,20 @@
           <div class="si-fig-value ${tone}">${saldoTxt}</div>
           <div class="si-fig-hint">${saldoHint}</div>
         </div>
-      </div>
+      </div>`;
 
-      <div class="si-progress">
+      // Ohne geplante Stunden ist ein Fortschrittsbalken sinnlos (0 % von 0 h).
+      // Dann zeigen wir stattdessen nur, was gearbeitet wurde.
+      if (!(d.sollHoursGesamt > 0)) {
+        html += `<div class="si-note si-note-plain">
+          Gearbeitet: <strong>${hrs(d.istHours)}</strong> · ${eur(verdienst)}
+          <span class="si-muted">— kein Kalender-Link verbunden, daher kein Soll</span>
+        </div>`;
+        box.innerHTML = html;
+        return;
+      }
+
+      html += `<div class="si-progress">
         ${siBar(pct, tone)}
         <div class="si-progress-meta">
           <span><strong>${pct.toFixed(0)} %</strong> des Plans${siState.period !== 'year' ? ' · <span class="si-muted">läuft</span>' : ''}</span>
@@ -614,13 +627,15 @@
       const currentWeekTips = currentWeekRows.reduce((sum, row) => sum + Number(row.tips), 0);
       const bestWeek = groups.reduce((best, group) => group.tips > (best?.tips ?? -1) ? group : best, null);
 
-      // Overview tab: die vier Kernzahlen — kompakt, ohne Aufklappen
+      // Overview tab: die vier Kernzahlen — kompakt, ohne Aufklappen.
+      // „Stunden" stand hier früher doppelt (oben in der Soll/Ist-Karte als
+      // „Gearbeitet"). Statt der Doppelung zeigen wir den Verdienst.
       const ovStats = document.getElementById('overviewStats');
       if (ovStats) ovStats.innerHTML = [
-        ['Stunden', hrs(totalHours), 'Alle Schichten', ''],
         ['Trinkgeld', eur(totalTips), 'Gesammelt', 'accent'],
         ['Ø Trinkgeld/Std', eur(avgTipsHour), 'Durchschnitt', ''],
         ['Beste Woche', bestWeek ? bestWeek.label : '—', bestWeek ? eur(bestWeek.tips) : 'Noch keine Daten', ''],
+        ['Schichten', String(rows.length), 'Alle Einträge', ''],
       ].map(([label, value, hint, cls]) =>
         `<div class="qs-cell">
           <div class="qs-label">${label}</div>
@@ -1042,8 +1057,7 @@
       // Table
       document.getElementById('tableBody').innerHTML = rows.slice().reverse().map(row =>
         `<tr>
-          <td>${row.week.label}</td>
-          <td>${weekdayName(row.date)}</td>
+          <td>${weekdayName(row.date)}<br><span class="row-sub">${row.week.label}</span></td>
           <td>${dateFmt(row.date)}</td>
           <td class="right">${hrs(row.actualHoursManual)}</td>
           <td class="right">${eur(row.tips)}</td>
@@ -1055,7 +1069,7 @@
             </div>
           </td>
         </tr>`
-      ).join('') || '<tr><td colspan="7" class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Noch nüscht drin.</div><div class="empty-sub">Leg los und trag deine erste Schicht ein.</div></td></tr>';
+      ).join('') || '<tr><td colspan="6" class="empty-state"><div class="empty-icon">📋</div><div class="empty-title">Noch nüscht drin.</div><div class="empty-sub">Leg los und trag deine erste Schicht ein.</div></td></tr>';
 
       // Hide skeleton, show content
       const ovSk = document.getElementById('overviewSkeleton');
