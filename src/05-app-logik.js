@@ -434,10 +434,19 @@
       const istHours = istRows.reduce((s, x) => s + Number(x.actualHoursManual || 0), 0);
       const istTips = istRows.reduce((s, x) => s + Number(x.tips || 0), 0);
 
-      // Soll nur aus echten Schichten des Kalender-Links
+      // Soll nur aus echten Schichten des Kalender-Links.
+      // TENTATIVE = unbestätigte/Draft-Schicht: zählt mit, wird aber getrennt ausgewiesen,
+      // weil sie kurz-fristig abgesagt werden kann (Tanda „pending shift").
       const planEvents = icalEvents.filter(e => icalIsShift(e) && inRange(e.start));
-      const sollMin = planEvents.reduce((s, e) => s + (icalDuration(e) || 0), 0);
+      const planFest = planEvents.filter(e => (e.status || 'CONFIRMED') !== 'TENTATIVE');
+      const planDraft = planEvents.filter(e => e.status === 'TENTATIVE');
+      const sollMin = planFest.reduce((s, e) => s + (icalDuration(e) || 0), 0);
+      const draftMin = planDraft.reduce((s, e) => s + (icalDuration(e) || 0), 0);
       const sollHours = sollMin / 60;
+      const draftHours = draftMin / 60;
+      // Für den Plan-Balken zählt beides (sonst fehlt die Hälfte), aber der Saldo
+      // wird gegen das FESTE Soll gerechnet — Draft darf ihn nicht künstlich drücken.
+      const sollMinGesamt = sollMin + draftMin;
 
       // Geplante Schichten, für die noch kein Ist-Eintrag existiert
       const offen = planEvents.filter(e => !istRows.some(x => x.date === e.start));
@@ -448,13 +457,15 @@
       const zusatzHours = zusatz.reduce((s, x) => s + Number(x.actualHoursManual || 0), 0);
 
       const today = localIso(new Date());
-      // Für den laufenden Zeitraum: nur bis heute bewerten, sonst wirkt jeder Monat „rot"
-      const sollBisHeute = planEvents.filter(e => e.start <= today).reduce((s, e) => s + (icalDuration(e) || 0), 0) / 60;
-      const offenMinBisHeute = planEvents.filter(e => e.start <= today && !istRows.some(x => x.date === e.start))
+      // Für den laufenden Zeitraum: nur bis heute bewerten, sonst wirkt jeder Monat „rot".
+      // Grundlage ist das FESTE Soll — unbestätigte Draft-Schichten dürfen kein Minus erzeugen.
+      const sollBisHeute = planFest.filter(e => e.start <= today).reduce((s, e) => s + (icalDuration(e) || 0), 0) / 60;
+      const offenMinBisHeute = planFest.filter(e => e.start <= today && !istRows.some(x => x.date === e.start))
         .reduce((s, e) => s + (icalDuration(e) || 0), 0);
 
       return {
         ...r, istHours, istTips, sollHours, offen, offenHours: offenMin / 60,
+        planDraft, draftHours, sollHoursGesamt: sollMinGesamt / 60,
         zusatz, zusatzHours, sollBisHeute, offenHoursBisHeute: offenMinBisHeute / 60,
         saldo: istHours - sollHours,
         saldoBisHeute: istHours - sollBisHeute,
@@ -523,8 +534,8 @@
       let html = `<div class="si-figures">
         <div class="si-fig">
           <div class="si-fig-label">Geplant</div>
-          <div class="si-fig-value">${hrs(d.sollHours)}</div>
-          <div class="si-fig-hint">${d.offen.length} offen</div>
+          <div class="si-fig-value">${hrs(d.sollHoursGesamt)}</div>
+          <div class="si-fig-hint">${d.planDraft.length ? `davon ${hrs(d.draftHours)} unbestätigt` : `${d.offen.length} offen`}</div>
         </div>
         <div class="si-fig">
           <div class="si-fig-label">Gearbeitet</div>
@@ -1464,6 +1475,70 @@
       const minInp = document.getElementById('icalMinShift');
       if (minInp && !minInp.value) minInp.value = String(icalMinShiftMin() / 60);
     }
+
+    // ── Diagnose: zeigt, was im Feed WIRKLICH steckt ──
+    // Nötig, weil Dienstplan-Anbieter (z.B. Tanda) ihr ICS-Format nicht dokumentieren.
+    // Statt zu raten: einmal den echten Feed auswerten und die Befunde anzeigen.
+    window.diagnoseIcal = async function () {
+      const url = getIcalUrl();
+      if (!url) { icalStatusAttr('Kein Link hinterlegt.', 'error'); return; }
+      icalStatusAttr('Analysiere Feed …', '');
+      try {
+        const res = await fetch(url.replace(/^webcal:\/\//i, 'https://'), { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const text = await res.text();
+        const raw = icalParse(text);
+
+        const withZ = (text.match(/DTSTART[^:\r\n]*:\d{8}T\d{6}Z/g) || []).length;
+        const withTz = (text.match(/DTSTART;TZID=/g) || []).length;
+        const floating = (text.match(/DTSTART:\d{8}T\d{6}(?!Z)/g) || []).length;
+        const allDay = (text.match(/DTSTART;VALUE=DATE:/g) || []).length;
+        const rrules = (text.match(/^RRULE/gm) || []).length;
+        const rruleTypes = [...new Set((text.match(/RRULE:[^\r\n]*FREQ=[A-Z]+/g) || [])
+          .map(s => s.replace(/.*FREQ=/, '').split(';')[0]))];
+        const exdates = (text.match(/^EXDATE/gm) || []).length;
+        const durations = (text.match(/^DURATION/gm) || []).length;
+        const statuses = {};
+        for (const e of raw) statuses[e.status || 'CONFIRMED'] = (statuses[e.status || 'CONFIRMED'] || 0) + 1;
+
+        const expanded = icalExpandRrule(raw);
+        const shifts = expanded.filter(icalIsShift);
+
+        const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+        const lines = [
+          ['VEVENTs im Feed', raw.length],
+          ['Schichten nach Filter', shifts.length],
+          ['Termine durch RRULE zusätzlich', expanded.length - raw.length],
+          ['Zeit UTC (Z)', withZ],
+          ['Zeit mit TZID', withTz],
+          ['Zeit lokal/floating', floating],
+          ['Ganztägig', allDay],
+          ['RRULE-Regeln', rrules],
+          ['RRULE-Typen', rruleTypes.length ? rruleTypes.join(', ') : '—'],
+          ['EXDATE (Absagen)', exdates],
+          ['DURATION statt DTEND', durations],
+          ['Status', Object.entries(statuses).map(([k, v]) => `${k}: ${v}`).join(', ') || '—'],
+          ['Beispiel-SUMMARY', raw[0] ? (raw[0].summary || '—') : '—'],
+        ];
+
+        let box = document.getElementById('icalDiag');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'icalDiag';
+          box.className = 'diag';
+          document.getElementById('icalStatus')?.after(box);
+        }
+        box.innerHTML = `<div class="diag-title">Feed-Diagnose</div>
+          <div class="diag-rows">${lines.map(([k, v]) =>
+            `<div class="diag-row"><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join('')}</div>
+          <div class="diag-note">Wenn „RRULE-Regeln“ &gt; 0 ist, entfaltet die App sie bereits.
+          Bei „Zeit UTC“ &gt; 0 wird korrekt in deine Zeitzone umgerechnet.</div>`;
+        icalStatusAttr('Diagnose fertig.', 'ok');
+      } catch (err) {
+        icalStatusAttr('Diagnose fehlgeschlagen: ' + (err.message || err), 'error');
+      }
+    };
 
     // ═══════════════════════════════════════
     //  Kalender + Urlaub
