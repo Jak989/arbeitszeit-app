@@ -468,6 +468,17 @@
       return `<div class="si-bar"><div class="si-bar-fill ${tone}" style="width:${w.toFixed(1)}%"></div></div>`;
     }
 
+    // Toleranzschwelle nach VDMA/Vergleichs-Apps (Deputy „Variance Tolerance"):
+    // kleine Abweichungen sind normal und werden NICHT farblich alarmiert.
+    // Unter 90 min bzw. unter 5 % des Plans gilt der Saldo als „im Plan".
+    function siTolerance(sollHours) {
+      return Math.max(1.5, sollHours * 0.05);
+    }
+
+    // Echte Grenzüberschreitung: Minijob-Grenze (556 €/Monat, Stand 2026)
+    // bzw. ArbZG-Tagesobergrenze 10 h. Nur DANN wird es rot.
+    const MINIJOB_LIMIT_EUR = 556;
+
     function renderSollIst() {
       const box = document.getElementById('sollIstBody');
       const title = document.getElementById('siTitle');
@@ -489,11 +500,24 @@
 
       const pct = d.sollHours ? (d.istHours / d.sollHours) * 100 : 0;
       const saldo = d.saldo;
-      const tone = Math.abs(saldo) < 0.05 ? 'neutral' : (saldo > 0 ? 'plus' : 'minus');
-      const saldoTxt = (saldo > 0 ? '+' : saldo < 0 ? '−' : '±') + hrs(Math.abs(saldo));
-      const saldoHint = saldo > 0 ? 'mehr gearbeitet als geplant'
-        : saldo < 0 ? 'weniger als geplant'
-        : 'genau im Plan';
+      const tol = siTolerance(d.sollHours);
+      const imPlan = Math.abs(saldo) <= tol;
+
+      // Farbe: im Plan = neutral. Sonst Akzent (grün/grau-orange).
+      // Rot NUR, wenn eine echte Grenze gerissen wird — nicht bei „weniger gearbeitet".
+      const verdienst = d.istHours * HOURLY_RATE;
+      const ueberMinijob = siState.period === 'month' && verdienst > MINIJOB_LIMIT_EUR;
+      const tone = ueberMinijob ? 'over-limit'
+        : imPlan ? 'neutral'
+        : (saldo > 0 ? 'plus' : 'minus');
+
+      // Immer Wort + Pfeil + Zahl — „+3,5 h" allein ist mehrdeutig
+      const saldoTxt = imPlan ? 'im Plan'
+        : (saldo > 0 ? '▲ ' : '▼ ') + hrs(Math.abs(saldo));
+      const saldoHint = ueberMinijob
+        ? `über Minijob-Grenze (${eur(MINIJOB_LIMIT_EUR)})`
+        : imPlan ? `Toleranz ±${hrs(tol)}`
+        : (saldo > 0 ? 'mehr als geplant' : 'weniger als geplant');
 
       // Große Zeile: Soll | Ist | Saldo
       let html = `<div class="si-figures">
@@ -505,7 +529,7 @@
         <div class="si-fig">
           <div class="si-fig-label">Gearbeitet</div>
           <div class="si-fig-value">${hrs(d.istHours)}</div>
-          <div class="si-fig-hint">${state.rows.filter(x => x.date >= d.from && x.date <= d.to).length} Schichten</div>
+          <div class="si-fig-hint">${eur(verdienst)}</div>
         </div>
         <div class="si-fig si-fig-saldo">
           <div class="si-fig-label">Saldo</div>
@@ -517,7 +541,7 @@
       <div class="si-progress">
         ${siBar(pct, tone)}
         <div class="si-progress-meta">
-          <span><strong>${pct.toFixed(0)} %</strong> des Plans</span>
+          <span><strong>${pct.toFixed(0)} %</strong> des Plans${siState.period !== 'year' ? ' · <span class="si-muted">läuft</span>' : ''}</span>
           <span>${hrs(d.istHours)} von ${hrs(d.sollHours)}</span>
         </div>
       </div>`;
@@ -531,8 +555,11 @@
         // „bis heute fällige Soll" liegt — alles links davon ist erledigt.
         const pctHeuteVomPlan = d.sollHours ? (d.sollBisHeute / d.sollHours) * 100 : 0;
         const saldoHeute = d.istHours - d.sollBisHeute;
-        const toneH = Math.abs(saldoHeute) < 0.05 ? 'neutral' : (saldoHeute > 0 ? 'plus' : 'minus');
-        const saldoHeuteTxt = (saldoHeute > 0 ? '+' : saldoHeute < 0 ? '−' : '±') + hrs(Math.abs(saldoHeute));
+        const tolH = siTolerance(d.sollBisHeute);
+        const imPlanH = Math.abs(saldoHeute) <= tolH;
+        const toneH = imPlanH ? 'neutral' : (saldoHeute > 0 ? 'plus' : 'minus');
+        const saldoHeuteTxt = imPlanH ? 'im Plan'
+          : (saldoHeute > 0 ? '▲ ' : '▼ ') + hrs(Math.abs(saldoHeute));
         html += `<div class="si-until">
           <div class="si-until-head">
             <span>Stand heute <span class="si-muted">(fällig bis ${dateFmt(d.to < localIso(new Date()) ? d.to : localIso(new Date())).split(' ').slice(1).join(' ')})</span></span>

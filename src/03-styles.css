@@ -527,7 +527,10 @@
       font-variant-numeric: tabular-nums;
     }
     .si-fig-value.plus { color: var(--accent-2); }
-    .si-fig-value.minus { color: var(--danger); }
+    /* Unter Plan ist KEIN Fehler — ruhige Akzentfarbe statt Alarm-Rot.
+       Rot nur bei echter Grenzüberschreitung (siehe .over-limit). */
+    .si-fig-value.minus { color: var(--accent-3); }
+    .si-fig-value.over-limit { color: var(--danger); }
     .si-fig-value.neutral { color: var(--muted); }
     .si-fig-hint {
       font-size: 10.5px;
@@ -563,7 +566,8 @@
       background: var(--accent);
     }
     .si-bar-fill.plus { background: var(--accent-2); }
-    .si-bar-fill.minus { background: var(--danger); }
+    .si-bar-fill.minus { background: var(--accent-3); }
+    .si-bar-fill.over-limit { background: var(--danger); }
     .si-bar-fill.neutral { background: var(--muted); }
     .si-progress-meta {
       display: flex;
@@ -592,7 +596,8 @@
     }
     .si-until-head strong { font-size: 13.5px; font-variant-numeric: tabular-nums; }
     .si-until-head strong.plus { color: var(--accent-2); }
-    .si-until-head strong.minus { color: var(--danger); }
+    .si-until-head strong.minus { color: var(--accent-3); }
+    .si-until-head strong.over-limit { color: var(--danger); }
     .si-until-head strong.neutral { color: var(--muted); }
 
     .si-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
@@ -605,7 +610,9 @@
       font-variant-numeric: tabular-nums;
     }
     .si-chip.plus { color: var(--accent-2); background: rgba(48,209,88,.1); border-color: rgba(48,209,88,.3); }
-    .si-chip.minus { color: var(--danger); background: rgba(255,59,48,.09); border-color: rgba(255,59,48,.28); }
+    /* „offen" ist kein Fehler → Orange, nicht Rot */
+    .si-chip.minus { color: var(--accent-3); background: rgba(255,159,10,.1); border-color: rgba(255,159,10,.3); }
+    .si-chip.danger { color: var(--danger); background: rgba(255,59,48,.09); border-color: rgba(255,59,48,.28); }
 
     .si-note {
       margin-top: 12px;
