@@ -353,8 +353,12 @@
       if (targetId === 'calendar') { renderCalendar(); }
       // Trinkgeld-Tab rendern
       if (targetId === 'tip') { renderTipTab(); }
+      // Kalender-Link-Einstellungen im Datenbank-Tab füllen
+      if (targetId === 'database') { initIcalSettings(); }
       // Chart neu zeichnen, wenn der Übersicht-Tab sichtbar wird (SVG braucht Layout)
       if (targetId === 'stats') {
+        // Kalender ggf. nachladen, damit Soll/Ist aktuell ist
+        (getIcalUrl() ? icalFetch(false) : Promise.resolve()).then(() => renderSollIst());
         setTimeout(() => { try { renderTrendChart(getTrendRows([...state.rows].sort((a,b)=>a.date.localeCompare(b.date)))); } catch(e){} }, 60);
       }
     }
@@ -394,6 +398,174 @@
 
     // (Prognose entfernt — auf Wunsch)
 
+    // ═══════════════════════════════════════
+    //  Soll / Ist — geplante vs. gearbeitete Stunden
+    // ═══════════════════════════════════════
+    // Soll  = Summe der Schichten aus dem Kalender-Link im Zeitraum
+    // Ist   = Summe der in der App erfassten Stunden im Zeitraum
+    // Saldo = Ist − Soll  (grün = mehr gearbeitet, rot = weniger)
+    const siState = { period: 'month' };
+
+    function siRange(period) {
+      const now = new Date();
+      if (period === 'week') {
+        const dow = (now.getDay() + 6) % 7;           // Montag = 0
+        const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dow);
+        const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+        return { from: localIso(mon), to: localIso(sun), label: `KW ${isoWeekInfo(localIso(now)).week}` };
+      }
+      if (period === 'year') {
+        return { from: `${now.getFullYear()}-01-01`, to: `${now.getFullYear()}-12-31`, label: String(now.getFullYear()) };
+      }
+      const from = new Date(now.getFullYear(), now.getMonth(), 1);
+      const to = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return {
+        from: localIso(from),
+        to: localIso(to),
+        label: new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' }).format(from),
+      };
+    }
+
+    function siCompute(period) {
+      const r = siRange(period);
+      const inRange = d => d >= r.from && d <= r.to;
+
+      const istRows = state.rows.filter(x => inRange(x.date));
+      const istHours = istRows.reduce((s, x) => s + Number(x.actualHoursManual || 0), 0);
+      const istTips = istRows.reduce((s, x) => s + Number(x.tips || 0), 0);
+
+      // Soll nur aus echten Schichten des Kalender-Links
+      const planEvents = icalEvents.filter(e => icalIsShift(e) && inRange(e.start));
+      const sollMin = planEvents.reduce((s, e) => s + (icalDuration(e) || 0), 0);
+      const sollHours = sollMin / 60;
+
+      // Geplante Schichten, für die noch kein Ist-Eintrag existiert
+      const offen = planEvents.filter(e => !istRows.some(x => x.date === e.start));
+      const offenMin = offen.reduce((s, e) => s + (icalDuration(e) || 0), 0);
+
+      // Ist-Schichten, die im Kalender gar nicht stehen (Einspringen / Zusatzschicht)
+      const zusatz = istRows.filter(x => !planEvents.some(e => e.start === x.date));
+      const zusatzHours = zusatz.reduce((s, x) => s + Number(x.actualHoursManual || 0), 0);
+
+      const today = localIso(new Date());
+      // Für den laufenden Zeitraum: nur bis heute bewerten, sonst wirkt jeder Monat „rot"
+      const sollBisHeute = planEvents.filter(e => e.start <= today).reduce((s, e) => s + (icalDuration(e) || 0), 0) / 60;
+      const offenMinBisHeute = planEvents.filter(e => e.start <= today && !istRows.some(x => x.date === e.start))
+        .reduce((s, e) => s + (icalDuration(e) || 0), 0);
+
+      return {
+        ...r, istHours, istTips, sollHours, offen, offenHours: offenMin / 60,
+        zusatz, zusatzHours, sollBisHeute, offenHoursBisHeute: offenMinBisHeute / 60,
+        saldo: istHours - sollHours,
+        saldoBisHeute: istHours - sollBisHeute,
+        hasPlan: icalEvents.length > 0,
+        isFutureOnly: sollBisHeute === 0 && sollHours > 0,
+      };
+    }
+
+    function siBar(pct, tone) {
+      const w = Math.max(0, Math.min(100, pct));
+      return `<div class="si-bar"><div class="si-bar-fill ${tone}" style="width:${w.toFixed(1)}%"></div></div>`;
+    }
+
+    function renderSollIst() {
+      const box = document.getElementById('sollIstBody');
+      const title = document.getElementById('siTitle');
+      if (!box) return;
+      const d = siCompute(siState.period);
+      if (title) title.textContent = d.label;
+
+      document.querySelectorAll('#siPeriodSwitch .si-tab').forEach(b =>
+        b.classList.toggle('active', b.dataset.period === siState.period));
+
+      if (!d.hasPlan) {
+        box.innerHTML = `<div class="si-empty">
+          <div class="si-empty-ico">🎯</div>
+          <div class="si-empty-title">Noch kein Soll vorhanden</div>
+          <div class="si-empty-sub">Sobald dein Kalender-Link hinterlegt ist (<strong>Datenbank → Kalender-Link</strong>), steht hier geplant vs. gearbeitet.</div>
+        </div>`;
+        return;
+      }
+
+      const pct = d.sollHours ? (d.istHours / d.sollHours) * 100 : 0;
+      const saldo = d.saldo;
+      const tone = Math.abs(saldo) < 0.05 ? 'neutral' : (saldo > 0 ? 'plus' : 'minus');
+      const saldoTxt = (saldo > 0 ? '+' : saldo < 0 ? '−' : '±') + hrs(Math.abs(saldo));
+      const saldoHint = saldo > 0 ? 'mehr gearbeitet als geplant'
+        : saldo < 0 ? 'weniger als geplant'
+        : 'genau im Plan';
+
+      // Große Zeile: Soll | Ist | Saldo
+      let html = `<div class="si-figures">
+        <div class="si-fig">
+          <div class="si-fig-label">Geplant</div>
+          <div class="si-fig-value">${hrs(d.sollHours)}</div>
+          <div class="si-fig-hint">${d.offen.length} offen</div>
+        </div>
+        <div class="si-fig">
+          <div class="si-fig-label">Gearbeitet</div>
+          <div class="si-fig-value">${hrs(d.istHours)}</div>
+          <div class="si-fig-hint">${state.rows.filter(x => x.date >= d.from && x.date <= d.to).length} Schichten</div>
+        </div>
+        <div class="si-fig si-fig-saldo">
+          <div class="si-fig-label">Saldo</div>
+          <div class="si-fig-value ${tone}">${saldoTxt}</div>
+          <div class="si-fig-hint">${saldoHint}</div>
+        </div>
+      </div>
+
+      <div class="si-progress">
+        ${siBar(pct, tone)}
+        <div class="si-progress-meta">
+          <span><strong>${pct.toFixed(0)} %</strong> des Plans</span>
+          <span>${hrs(d.istHours)} von ${hrs(d.sollHours)}</span>
+        </div>
+      </div>`;
+
+      // Laufender Zeitraum: Fortschritt bis heute statt Endstand
+      if (d.isFutureOnly) {
+        html += `<div class="si-note">Der Zeitraum liegt noch vor dir — geplant sind ${hrs(d.sollHours)}.</div>`;
+      } else if (d.sollBisHeute > 0 && Math.abs(d.sollBisHeute - d.sollHours) > 0.05) {
+        // Achtung: dieser Balken nutzt DIESELBE Skala wie oben (Anteil am Gesamtplan),
+        // damit man die Längen vergleichen kann. Zusätzlich markieren wir, wo das
+        // „bis heute fällige Soll" liegt — alles links davon ist erledigt.
+        const pctHeuteVomPlan = d.sollHours ? (d.sollBisHeute / d.sollHours) * 100 : 0;
+        const saldoHeute = d.istHours - d.sollBisHeute;
+        const toneH = Math.abs(saldoHeute) < 0.05 ? 'neutral' : (saldoHeute > 0 ? 'plus' : 'minus');
+        const saldoHeuteTxt = (saldoHeute > 0 ? '+' : saldoHeute < 0 ? '−' : '±') + hrs(Math.abs(saldoHeute));
+        html += `<div class="si-until">
+          <div class="si-until-head">
+            <span>Stand heute <span class="si-muted">(fällig bis ${dateFmt(d.to < localIso(new Date()) ? d.to : localIso(new Date())).split(' ').slice(1).join(' ')})</span></span>
+            <strong class="${toneH}">${saldoHeuteTxt}</strong>
+          </div>
+          <div class="si-bar si-bar-marked">
+            <div class="si-bar-fill ${toneH}" style="width:${Math.min(100, d.istHours && d.sollHours ? (d.istHours / d.sollHours) * 100 : 0).toFixed(1)}%"></div>
+            <div class="si-marker" style="left:${Math.min(100, pctHeuteVomPlan).toFixed(1)}%" title="Soll bis heute"></div>
+          </div>
+          <div class="si-progress-meta">
+            <span>${hrs(d.istHours)} gearbeitet</span>
+            <span>${hrs(d.sollBisHeute)} wären bis heute fällig</span>
+          </div>
+        </div>`;
+      }
+
+      // Zusatzschichten (nicht im Plan) und offene Schichten
+      const extras = [];
+      if (d.zusatz.length) extras.push(`<span class="si-chip plus">+${d.zusatz.length} ohne Plan · ${hrs(d.zusatzHours)}</span>`);
+      if (d.offen.length) extras.push(`<span class="si-chip minus">${d.offen.length} offen · ${hrs(d.offenHours)}</span>`);
+      if (extras.length) html += `<div class="si-chips">${extras.join('')}</div>`;
+
+      box.innerHTML = html;
+    }
+
+    // Zeitraum-Umschalter
+    document.querySelectorAll('#siPeriodSwitch .si-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        siState.period = btn.dataset.period;
+        renderSollIst();
+      });
+    });
+
     function renderStats(rows, groups) {
       const totalHours = rows.reduce((sum, row) => sum + Number(row.actualHoursManual), 0);
       const totalTips = rows.reduce((sum, row) => sum + Number(row.tips), 0);
@@ -404,15 +576,19 @@
       const currentWeekTips = currentWeekRows.reduce((sum, row) => sum + Number(row.tips), 0);
       const bestWeek = groups.reduce((best, group) => group.tips > (best?.tips ?? -1) ? group : best, null);
 
-      // Overview tab: Gesamt + Woche + Letzter Eintrag
+      // Overview tab: die vier Kernzahlen — kompakt, ohne Aufklappen
       const ovStats = document.getElementById('overviewStats');
       if (ovStats) ovStats.innerHTML = [
-        ['Stunden gesamt', hrs(totalHours), 'Alle gespeicherten Schichten'],
-        ['Trinkgeld gesamt', eur(totalTips), 'Sauber aufsummiert'],
-        ['Ø Trinkgeld pro Stunde', eur(avgTipsHour), 'Hilft beim Einordnen'],
-        ['Beste Woche', bestWeek ? `${bestWeek.label} · ${eur(bestWeek.tips)}` : '—', 'Stärkste KW bisher'],
-      ].map(([label, value, hint]) =>
-        `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${hint}</div></div>`
+        ['Stunden', hrs(totalHours), 'Alle Schichten', ''],
+        ['Trinkgeld', eur(totalTips), 'Gesammelt', 'accent'],
+        ['Ø Trinkgeld/Std', eur(avgTipsHour), 'Durchschnitt', ''],
+        ['Beste Woche', bestWeek ? bestWeek.label : '—', bestWeek ? eur(bestWeek.tips) : 'Noch keine Daten', ''],
+      ].map(([label, value, hint, cls]) =>
+        `<div class="qs-cell">
+          <div class="qs-label">${label}</div>
+          <div class="qs-value ${cls}">${value}</div>
+          <div class="qs-hint">${hint}</div>
+        </div>`
       ).join('');
 
       const wf = document.getElementById('weekFocus');
@@ -804,6 +980,7 @@
       });
 
       syncTrendControls(rows, groups);
+      renderSollIst();
       renderStats(rows, groups);
       renderMonthlyEarnings(rows);
       renderTrendChart(getTrendRows(rows));
@@ -852,6 +1029,416 @@
     }
 
     // ═══════════════════════════════════════
+    //  Kalender-Link (iCal / ICS) → zukünftige Schichten
+    // ═══════════════════════════════════════
+    // Idee: Der Dienstplan liegt im Google/iCloud/Outlook-Kalender. Statt ihn
+    // doppelt zu pflegen, liest die App den (geheimen, nur lesbaren) ICS-Link.
+    // Alles wird nur gelesen und lokal zwischengespeichert (localStorage).
+    const ICAL_KEY = 'azt-ical-url';
+    const ICAL_CACHE_KEY = 'azt-ical-cache';
+    const ICAL_CACHE_MS = 15 * 60 * 1000;   // 15 Min Cache — spart mobilen Traffic
+    const ICAL_MIN_KEY = 'azt-ical-minshift';
+    let icalEvents = [];
+    let icalSyncedAt = 0;
+    let icalBusy = false;
+
+    function getIcalUrl() {
+      try { return (localStorage.getItem(ICAL_KEY) || '').trim(); } catch (e) { return ''; }
+    }
+
+    function icalStatusAttr(text, cls) {
+      const el = document.getElementById('icalStatus');
+      if (!el) return;
+      el.textContent = text;
+      el.className = 'status ' + (cls || '');
+    }
+
+    // ── ICS-Text in Blöcke zerlegen (Zeilen entfalten ist Pflicht laut RFC 5545) ──
+    function icalUnfold(text) {
+      return String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n').replace(/\n[ \t]/g, '');
+    }
+    function icalUnescape(s) {
+      return String(s).replace(/\\n/gi, ' ').replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\\\/g, '\\').trim();
+    }
+
+    // Datum/Uhrzeit nach RFC 5545. getLocalDate = "ist ein lokaler Termin" (kein Z)
+    function icalParseDT(value) {
+      const v = String(value || '').trim();
+      let m = v.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?$/);
+      if (m) {
+        const [, y, mo, d, h, mi, , z] = m;
+        const isoDate = `${y}-${mo}-${d}`;
+        if (z) {
+          // UTC → in die Handy-Zeitzone umrechnen
+          const dt = new Date(Date.UTC(+y, +mo - 1, +d, +h, +mi));
+          return {
+            local: true,
+            date: localIso(dt),
+            minutes: dt.getHours() * 60 + dt.getMinutes(),
+            hasTime: true,
+          };
+        }
+        return { local: true, date: isoDate, minutes: +h * 60 + +mi, hasTime: true };
+      }
+      m = v.match(/^(\d{4})(\d{2})(\d{2})$/);
+      if (m) return { local: true, date: `${m[1]}-${m[2]}-${m[3]}`, minutes: null, hasTime: false };
+      return null;
+    }
+
+    function localIso(d) {
+      return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+    }
+
+    // Ein ICS-Text → Event-Liste
+    function icalParse(text) {
+      const lines = icalUnfold(text).split('\n');
+      const events = [];
+      let cur = null;
+      let inTz = false;
+
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+
+        if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+        if (line === 'END:VEVENT') {
+          if (cur) events.push(cur);
+          cur = null;
+          continue;
+        }
+        if (line === 'BEGIN:VTIMEZONE') { inTz = true; continue; }
+        if (line === 'END:VTIMEZONE') { inTz = false; continue; }
+        // In VTIMEZONEN stehen TZOFFSET/STANDARD-Zeilen — überspringen
+        if (inTz) continue;
+        if (!cur) continue;
+
+        const ci = line.indexOf(':');
+        if (ci < 0) continue;
+        const head = line.slice(0, ci);
+        const value = line.slice(ci + 1);
+        const semi = head.indexOf(';');
+        const key = (semi > 0 ? head.slice(0, semi) : head).toUpperCase();
+        const params = semi > 0 ? head.slice(semi + 1) : '';
+        const tzid = (params.match(/TZID=([^;:]+)/i) || [])[1];
+
+        if (key === 'SUMMARY') cur.summary = icalUnescape(value);
+        else if (key === 'DTSTART') {
+          const dt = icalParseDT(value);
+          if (dt) {
+            cur.start = dt.date;
+            cur.startMin = dt.minutes;
+            cur.allDay = !dt.hasTime;
+            cur.tz = tzid || '';
+          }
+        } else if (key === 'DTEND') {
+          const dt = icalParseDT(value);
+          if (dt) { cur.end = dt.date; cur.endMin = dt.minutes; }
+        } else if (key === 'DURATION') {
+          // DURATION kommt statt DTEND vor (z. B. PT8H30M)
+          const dm = /^P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?)?/i.exec(value.trim());
+          if (dm && (dm[1] || dm[2] || dm[3])) {
+            cur.durationMin = (+(dm[1] || 0)) * 1440 + (+(dm[2] || 0)) * 60 + (+(dm[3] || 0));
+          }
+        } else if (key === 'RRULE') {
+          cur.rrule = value.trim();
+        } else if (key === 'EXDATE') {
+          // Kann mehrere Daten kommagetrennt enthalten
+          (cur.exdates = cur.exdates || []).push(...value.split(',').map(icalParseDT).filter(Boolean).map(d => d.date));
+        } else if (key === 'DESCRIPTION') cur.description = icalUnescape(value);
+        else if (key === 'LOCATION') cur.location = icalUnescape(value);
+        else if (key === 'STATUS') cur.status = value.trim().toUpperCase();
+      }
+      return events.filter(e => e.start && e.summary && /^(CONFIRMED|TENTATIVE)?$/.test(e.status || ''));
+    }
+
+    // ── RRULE: wiederkehrende Schichten entfalten ──
+    // Tanda & Co. legen Schichten teils als einen VEVENT mit RRULE an (jede Woche
+    // Mo/Mi/Fr). Ohne Entfaltung sähe die App nur die allererste Schicht.
+    // Unterstützt: FREQ=DAILY|WEEKLY|MONTHLY|YEARLY, INTERVAL, BYDAY, COUNT, UNTIL.
+    const WEEKDAY_CODE = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+
+    function icalExpandRrule(events) {
+      const out = [];
+      const MAX_INSTANCES = 500;   // Sicherheitsnetz gegen Endlos-Feeds
+
+      for (const e of events) {
+        if (!e.rrule) { out.push(e); continue; }
+
+        const rule = {};
+        for (const part of e.rrule.split(';')) {
+          const [k, v] = part.split('=');
+          if (k && v) rule[k.toUpperCase()] = v;
+        }
+        const freq = (rule.FREQ || '').toUpperCase();
+        if (!['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].includes(freq)) {
+          // Unbekannte Regel (z. B. HOURLY) → nur der Starttermin
+          out.push({ ...e, rrule: null });
+          continue;
+        }
+
+        const interval = Math.max(1, parseInt(rule.INTERVAL || '1', 10) || 1);
+        const count = rule.COUNT ? parseInt(rule.COUNT, 10) : null;
+        const untilDt = rule.UNTIL ? icalParseDT(rule.UNTIL) : null;
+        const until = untilDt ? untilDt.date : null;
+        const byDay = rule.BYDAY
+          ? rule.BYDAY.split(',').map(x => WEEKDAY_CODE[x.replace(/^[+-]?\d+/, '').toUpperCase()]).filter(v => v !== undefined)
+          : null;
+
+        const base = new Date(e.start + 'T12:00:00');
+        const exdates = new Set(e.exdates || []);
+        const durDays = e.end ? Math.round((new Date(e.end + 'T12:00:00') - base) / 86400000) : 0;
+
+        const push = (d) => {
+          const iso = localIso(d);
+          if (exdates.has(iso)) return true;          // abgesagt → überspringen
+          const endD = new Date(d.getTime() + durDays * 86400000);
+          out.push({
+            ...e,
+            start: iso,
+            end: localIso(endD),
+            rrule: null,
+            instanceOf: e.start,
+          });
+          return true;
+        };
+
+        let made = 0;
+        const limit = count || MAX_INSTANCES;
+
+        if (freq === 'WEEKLY' && byDay && byDay.length) {
+          // Alle passenden Wochentage ab Startdatum durchlaufen
+          const startWeek = new Date(base);
+          startWeek.setDate(startWeek.getDate() - ((startWeek.getDay() + 6) % 7));
+          for (let w = 0; made < limit && w < 520; w += interval) {
+            for (const dow of byDay) {
+              const d = new Date(startWeek);
+              d.setDate(startWeek.getDate() + w * 7 + ((dow + 6) % 7));
+              if (d < base) continue;
+              const iso = localIso(d);
+              if (until && iso > until) return out;
+              push(d); made++;
+              if (made >= limit) break;
+            }
+          }
+        } else {
+          const step = freq === 'DAILY' ? 1 : freq === 'WEEKLY' ? 7 : 0;
+          for (let i = 0; made < limit && i < MAX_INSTANCES + 50; i++) {
+            let d;
+            if (freq === 'MONTHLY') {
+              d = new Date(base.getFullYear(), base.getMonth() + i * interval, base.getDate(), 12);
+              if (d.getDate() !== base.getDate()) continue;   // 31. in kurzem Monat → überspringen
+            } else if (freq === 'YEARLY') {
+              d = new Date(base.getFullYear() + i * interval, base.getMonth(), base.getDate(), 12);
+            } else {
+              d = new Date(base.getTime() + i * interval * step * 86400000);
+            }
+            const iso = localIso(d);
+            if (until && iso > until) break;
+            push(d); made++;
+          }
+        }
+      }
+      return out;
+    }
+
+    // Dauer in Minuten (angefangene Schicht zählt bis Ende; über Mitternacht wird korrekt gerechnet)
+    function icalDuration(e) {
+      // DURATION statt DTEND (kommt bei Tanda & Co. vor)
+      if (e.startMin != null && e.durationMin) return e.durationMin;
+      if (e.startMin == null || e.endMin == null) return e.durationMin || null;
+      if (e.end > e.start) {
+        const days = (new Date(e.end + 'T12:00:00') - new Date(e.start + 'T12:00:00')) / 86400000;
+        return days * 1440 + (e.endMin - e.startMin);
+      }
+      let d = e.endMin - e.startMin;
+      if (d < 0) d += 1440;
+      return d || null;
+    }
+
+    function icalIsShift(e) {
+      const d = icalDuration(e);
+      // Schichten sind Termine MIT Uhrzeit. Ganztägige Blöcke („Urlaub", „frei") und
+      // kurze Termine (Meeting, Arzt) sind keine Schicht.
+      if (!d || d < icalMinShiftMin()) return false;
+      if (/^(urlaub|frei|abwesend|krank|feiertag)/i.test(e.summary)) return false;
+      return true;
+    }
+
+    // Ab welcher Dauer ein Termin als Schicht gilt (einstellbar, Default 4 h)
+    function icalMinShiftMin() {
+      try {
+        const v = Number(localStorage.getItem(ICAL_MIN_KEY));
+        if (v >= 1 && v <= 16) return Math.round(v * 60);
+      } catch (e) {}
+      return 240;
+    }
+    window.saveIcalMinShift = function () {
+      const inp = document.getElementById('icalMinShift');
+      if (!inp) return;
+      const v = Number(String(inp.value).replace(',', '.'));
+      if (!(v >= 1 && v <= 16)) { icalStatusAttr('Mindestdauer muss zwischen 1 und 16 Stunden liegen.', 'error'); return; }
+      try { localStorage.setItem(ICAL_MIN_KEY, String(v)); localStorage.removeItem(ICAL_CACHE_KEY); } catch (e) {}
+      icalStatusAttr(`Mindestdauer auf ${v} h gesetzt.`, 'ok');
+      icalFetch(true).then(() => renderCalendar());
+    };
+
+    function hm(min) { return min == null ? '' : `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`; }
+
+    function icalFetch(force) {
+      const url = getIcalUrl();
+      if (!url) { icalEvents = []; return Promise.resolve([], false); }
+
+      // Cache nutzen, wenn frisch genug
+      if (!force) {
+        try {
+          const c = JSON.parse(localStorage.getItem(ICAL_CACHE_KEY) || 'null');
+          if (c && c.url === url && Date.now() - c.at < ICAL_CACHE_MS) {
+            icalEvents = c.events || [];
+            icalSyncedAt = c.at || 0;
+            return Promise.resolve(icalEvents, true);
+          }
+        } catch (e) {}
+      }
+
+      if (icalBusy) return Promise.resolve(icalEvents, true);
+      icalBusy = true;
+      const httpUrl = url.replace(/^webcal:\/\//i, 'https://');
+      icalStatusAttr('Kalender wird geladen …', '');
+      return fetch(httpUrl, { cache: 'no-store' })
+        .then(res => {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          return res.text();
+        })
+        .then(text => {
+          if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error('Das ist kein iCal-Kalender.');
+          // Erst RRULE entfalten (Tanda: eine Regel = viele Schichten), dann filtern
+          const all = icalExpandRrule(icalParse(text));
+          icalEvents = all.filter(icalIsShift);
+          // Doppelte Termine (gleicher Tag, gleiche Startzeit) zusammenfassen
+          const seen = new Set();
+          icalEvents = icalEvents.filter(e => {
+            const k = e.start + '|' + (e.startMin ?? 'all');
+            if (seen.has(k)) return false;
+            seen.add(k);
+            return true;
+          });
+          icalSyncedAt = Date.now();
+          try {
+            localStorage.setItem(ICAL_CACHE_KEY, JSON.stringify({ url, at: icalSyncedAt, events: icalEvents }));
+          } catch (e) {}
+          const open = icalEvents.filter(e => e.start >= localIso(new Date())).length;
+          icalStatusAttr(`Verbunden — ${icalEvents.length} Schichten, davon ${open} noch offen.`, 'ok');
+          return icalEvents;
+        })
+        .catch(err => {
+          icalStatusAttr('Kalender-Link konnte nicht geladen werden (' + (err.message || err) + '). '
+            + 'Bei Google: muss mit https://…ical beginnen und öffentlich (geheim) freigegeben sein.', 'error');
+          return icalEvents;
+        })
+        .finally(() => { icalBusy = false; });
+    }
+
+    function icalEventsForMonth(year, month) {
+      const pre = `${year}-${pad2(month + 1)}`;
+      return icalEvents.filter(e => e.start.startsWith(pre)).sort((a, b) => a.start.localeCompare(b.start) || (a.startMin || 0) - (b.startMin || 0));
+    }
+
+    function icalPlanRow(e, opts) {
+      const dur = icalDuration(e);
+      const done = state.rows.some(r => r.date === e.start);
+      const time = e.startMin != null ? `${hm(e.startMin)}–${hm(e.endMin)}` : 'ganztägig';
+      const hStr = dur ? (dur / 60).toFixed(1).replace('.', ',') + ' h' : '';
+      const bruto = dur ? eur(dur / 60 * HOURLY_RATE) : '';
+      const meta = [time, hStr, bruto ? '≈ ' + bruto : '', e.location || ''].filter(Boolean).join(' · ');
+      const when = opts && opts.short
+        ? `${compactDate(e.start)}<small>${weekdayName(e.start)}</small>`
+        : `${e.start.slice(8, 10)}.${e.start.slice(5, 7)}.`;
+      return `<button class="plan-row" type="button" onclick="openCalDay('${e.start}')">
+        <span class="plan-when">${when}</span>
+        <span class="plan-main">
+          <span class="plan-title">${escapeHtml(e.summary)}</span>
+          <span class="plan-meta">${escapeHtml(meta)}</span>
+        </span>
+        <span class="plan-badge ${done ? 'done' : 'open'}">${done ? 'erfasst' : 'offen'}</span>
+      </button>`;
+    }
+
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function renderUpcoming() {
+      const box = document.getElementById('calUpcoming');
+      if (!box) return;
+      if (!getIcalUrl()) {
+        box.innerHTML = '<div class="plan-empty">Noch kein Kalender verbunden. Unter <strong>Datenbank → Kalender-Link</strong> den iCal-Link eintragen — dann stehen hier alle kommenden Schichten.</div>';
+        return;
+      }
+      const today = localIso(new Date());
+      const next = icalEvents
+        .filter(e => e.start >= today)
+        .sort((a, b) => a.start.localeCompare(b.start) || (a.startMin || 0) - (b.startMin || 0))
+        .slice(0, 6);
+      box.innerHTML = next.length
+        ? '<div class="plan-list">' + next.map(e => icalPlanRow(e, { short: true })).join('') + '</div>'
+        : '<div class="plan-empty">Keine kommenden Schichten im Kalender gefunden. Link prüfen oder auf „Aktualisieren“ (Pull-to-Refresh).</div>';
+    }
+
+    function renderMonthShifts(year, month) {
+      const body = document.getElementById('calMonthShiftsBody');
+      const card = document.getElementById('calMonthShiftsCard');
+      if (!body) return;
+      if (!getIcalUrl()) { if (card) card.style.display = 'none'; return; }
+      if (card) card.style.display = '';
+      const rows = icalEventsForMonth(year, month);
+      body.innerHTML = rows.length
+        ? rows.map(e => {
+            const dur = icalDuration(e);
+            const done = state.rows.some(r => r.date === e.start);
+            return `<tr onclick="openCalDay('${e.start}')" style="cursor:pointer;">
+              <td>${compactDate(e.start)}<br><span style="color:var(--muted);font-size:11px;">${weekdayName(e.start)}</span></td>
+              <td>${escapeHtml(e.summary)}${done ? ' <span class="plan-badge done">erfasst</span>' : ''}</td>
+              <td class="right">${e.startMin != null ? hm(e.startMin) + '–' + hm(e.endMin) : '—'}</td>
+              <td class="right">${dur ? (dur / 60).toFixed(1).replace('.', ',') : '—'}</td>
+              <td class="right">${dur ? '≈ ' + eur(dur / 60 * HOURLY_RATE) : '—'}</td>
+            </tr>`;
+          }).join('')
+        : '<tr><td colspan="5" class="empty-state"><div class="empty-icon">🗓️</div><div class="empty-title">Keine geplanten Schichten.</div><div class="empty-sub">In diesem Monat steht nichts im Kalender.</div></td></tr>';
+    }
+
+    // Einstellungen: Link speichern / entfernen
+    window.saveIcalSettings = async function () {
+      const raw = (document.getElementById('icalUrl')?.value || '').trim();
+      if (!raw) { icalStatusAttr('Bitte einen Kalender-Link eingeben.', 'error'); return; }
+      if (!/^(https?:\/\/|webcal:\/\/)/i.test(raw)) {
+        icalStatusAttr('Der Link muss mit https:// oder webcal:// beginnen.', 'error');
+        return;
+      }
+      try { localStorage.setItem(ICAL_KEY, raw); } catch (e) {}
+      try { localStorage.removeItem(ICAL_CACHE_KEY); } catch (e) {}
+      icalEvents = [];
+      await icalFetch(true);
+      await renderCalendar();
+    };
+
+    window.clearIcalSettings = async function () {
+      try { localStorage.removeItem(ICAL_KEY); localStorage.removeItem(ICAL_CACHE_KEY); } catch (e) {}
+      icalEvents = [];
+      icalSyncedAt = 0;
+      const inp = document.getElementById('icalUrl');
+      if (inp) inp.value = '';
+      icalStatusAttr('Kalender-Link entfernt.', '');
+      await renderCalendar();
+    };
+
+    function initIcalSettings() {
+      const inp = document.getElementById('icalUrl');
+      if (inp && !inp.value) inp.value = getIcalUrl();
+      const minInp = document.getElementById('icalMinShift');
+      if (minInp && !minInp.value) minInp.value = String(icalMinShiftMin() / 60);
+    }
+
+    // ═══════════════════════════════════════
     //  Kalender + Urlaub
     // ═══════════════════════════════════════
     const calState = { year: new Date().getFullYear(), month: new Date().getMonth() };
@@ -874,11 +1461,18 @@
       const leaveAll = await db.leave.toArray().catch(() => []);
       const leaveMap = new Map(leaveAll.map(l => [l.date, l]));
       const entryMap = new Map(state.rows.map(r => [r.date, r]));
+      // Kalender-Link: gecachte Schichten, bei Bedarf nachladen
+      if (getIcalUrl()) await icalFetch(false);
+      const planMap = new Map();
+      for (const e of icalEvents) {
+        if (!planMap.has(e.start)) planMap.set(e.start, []);
+        planMap.get(e.start).push(e);
+      }
 
       const first = new Date(year, month, 1);
       const daysInMonth = new Date(year, month + 1, 0).getDate();
       const lead = (first.getDay() + 6) % 7;   // Montag = 0
-      const todayIso = new Date().toISOString().slice(0, 10);
+      const todayIso = localIso(new Date());
 
       let cells = '';
       for (let i = 0; i < lead; i++) cells += '<div class="cal-cell empty"></div>';
@@ -887,21 +1481,33 @@
         const iso = `${year}-${pad2(month + 1)}-${pad2(d)}`;
         const entry = entryMap.get(iso);
         const leave = leaveMap.get(iso);
+        const plans = planMap.get(iso);
+        const plan = plans ? plans[0] : null;
         const cls = ['cal-cell'];
         if (iso === todayIso) cls.push('today');
+        if (plan) cls.push('planned');
         if (leave) cls.push(LEAVE_CLASS[leave.type] || 'leave-paid');
         else if (entry) cls.push('work');
 
         let sub = '';
         if (leave) sub = LEAVE_SHORT[leave.type] || 'Urlaub';
         else if (entry) sub = (+entry.actualHoursManual).toFixed(1).replace('.', ',') + 'h';
+        else if (plan) {
+          // geplante Schicht: Uhrzeit statt Stunden (dünn, damit es nicht mit erfassten Zeiten verwechselt wird)
+          sub = plan.startMin != null ? hm(plan.startMin) : 'geplant';
+        }
 
-        cells += `<button class="${cls.join(' ')}" type="button" onclick="openCalDay('${iso}')">
+        cells += `<button class="${cls.join(' ')}" type="button" onclick="openCalDay('${iso}')"${plan ? ` title="${escapeHtml(plan.summary)}"` : ''}>
           <span class="cal-num">${d}</span>
           ${sub ? `<span class="cal-sub">${sub}</span>` : ''}
+          ${plan ? '<span class="cal-corner"></span>' : ''}
         </button>`;
       }
       grid.innerHTML = cells;
+
+      // Nächste Schichten + geplante Schichten im Monat
+      renderUpcoming();
+      renderMonthShifts(year, month);
 
       // Monatszusammenfassung
       const monthPrefix = `${year}-${pad2(month + 1)}`;
@@ -913,14 +1519,26 @@
       const unpaid = mLeave.filter(l => l.type === 'unpaid').length;
 
       const cs = document.getElementById('calSummary');
-      if (cs) cs.innerHTML = [
-        ['Arbeitstage', String(mRows.length), 'Einträge in diesem Monat'],
-        ['Stunden', hrs(mHours), 'Diesen Monat gearbeitet'],
-        ['Trinkgeld', eur(mTips), 'Diesen Monat gesammelt'],
-        ['Brutto', eur(mHours * HOURLY_RATE), `${HOURLY_RATE.toFixed(2).replace('.', ',')} €/h`],
-      ].map(([l, v, h]) =>
-        `<div class="metric"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${h}</div></div>`
-      ).join('');
+      if (cs) {
+        const metrics = [
+          ['Arbeitstage', String(mRows.length), 'Einträge in diesem Monat'],
+          ['Stunden', hrs(mHours), 'Diesen Monat gearbeitet'],
+          ['Trinkgeld', eur(mTips), 'Diesen Monat gesammelt'],
+          ['Brutto', eur(mHours * HOURLY_RATE), `${HOURLY_RATE.toFixed(2).replace('.', ',')} €/h`],
+        ];
+        // Geplante Schichten aus dem Kalender-Link (nur wenn verbunden)
+        const mPlans = icalEventsForMonth(year, month);
+        if (mPlans.length) {
+          const planMin = mPlans.reduce((s, e) => s + (icalDuration(e) || 0), 0);
+          const openPlans = mPlans.filter(e => !mRows.some(r => r.date === e.start));
+          const openMin = openPlans.reduce((s, e) => s + (icalDuration(e) || 0), 0);
+          metrics.push(['Geplant', `${mPlans.length} Schichten`, `${hrs(planMin / 60)} im Dienstplan`]);
+          metrics.push(['Noch offen', `${openPlans.length} Schichten`, openPlans.length ? `≈ ${eur(openMin / 60 * HOURLY_RATE)} fehlen` : 'alles erfasst']);
+        }
+        cs.innerHTML = metrics.map(([l, v, h]) =>
+          `<div class="metric"><div class="label">${l}</div><div class="value">${v}</div><div class="hint">${h}</div></div>`
+        ).join('');
+      }
 
       // Urlaubs-Kennzahlen (über alles)
       const allLeave = leaveAll;
@@ -974,6 +1592,19 @@
         buttons.push({ label: `✏️ Schicht bearbeiten (${hrs(entry.actualHoursManual)})`, action: () => editRow(iso) });
         buttons.push({ label: '🗑️ Schicht löschen', danger: true, action: () => executeDelete(iso) });
       } else {
+        // Geplante Schicht aus dem Kalender-Link? Dann Uhrzeit direkt übernehmen.
+        const plan = icalEvents.find(e => e.start === iso);
+        if (plan && icalDuration(plan)) {
+          const dur = icalDuration(plan);
+          buttons.push({ label: `📅 Plan übernehmen (${hm(plan.startMin)}–${hm(plan.endMin)}, ${(dur / 60).toFixed(2).replace('.', ',')} h)`, action: () => {
+            resetForm();
+            form.date.value = iso;
+            form.hours.value = String(dur / 60).replace('.', ',').slice(0, 5);
+            if (form.note) form.note.value = plan.summary;
+            activateTab('capture');
+            showToast('Plan übernommen — Stunden prüfen und speichern');
+          }});
+        }
         buttons.push({ label: '📝 Schicht nachtragen', action: () => {
           resetForm();
           form.date.value = iso;
@@ -1280,7 +1911,7 @@
       const ovCt3 = document.getElementById('overviewContent');
       if (ovSk3) ovSk3.style.display = state.loaded ? 'none' : 'block';
       if (ovCt3) ovCt3.style.display = 'none';
-      try { await loadData(); showToast('Daten aktualisiert 😺'); }
+      try { await loadData(); await icalFetch(true); showToast('Daten aktualisiert 😺'); }
       catch (err) { showToast('Fehler beim Aktualisieren', 3000); }
     }
 

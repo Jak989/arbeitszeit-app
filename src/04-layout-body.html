@@ -105,18 +105,39 @@
 
       <div id="overviewContent" style="display:none">
 
-        <!-- 1 · Gesamtübersicht (offen) -->
-        <div class="acc open" data-acc>
+        <!-- 0 · Soll/Ist: geplant vs. gearbeitet (Kern des Analyse-Tabs) -->
+        <div class="card sollist" id="sollIstCard">
+          <div class="si-head">
+            <div>
+              <div class="si-eyebrow">Soll / Ist</div>
+              <h2 id="siTitle">Dieser Monat</h2>
+            </div>
+            <div class="si-period" id="siPeriodSwitch">
+              <button class="si-tab active" type="button" data-period="week">Woche</button>
+              <button class="si-tab" type="button" data-period="month">Monat</button>
+              <button class="si-tab" type="button" data-period="year">Jahr</button>
+            </div>
+          </div>
+          <div id="sollIstBody"></div>
+        </div>
+
+        <!-- 1 · Die vier Zahlen, die zählen — immer sichtbar, ohne Aufklappen -->
+        <div class="card quickstats">
+          <div class="qs-grid" id="overviewStats"></div>
+        </div>
+
+        <!-- 2 · Kennzahlen (zugeklappt, Detailtiefe) -->
+        <div class="acc" data-acc>
           <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">📊</span>Gesamtübersicht</span>
+            <span class="acc-title"><span class="acc-ico">🔢</span>Weitere Kennzahlen</span>
             <span class="acc-chev">›</span>
           </button>
           <div class="acc-body">
-            <div class="grid stats-grid" id="overviewStats"></div>
+            <div class="grid stats-grid" id="analysisStats"></div>
           </div>
         </div>
 
-        <!-- 2 · Diese Woche / Letzter Eintrag -->
+        <!-- 3 · Diese Woche / Letzter Eintrag -->
         <div class="acc" data-acc>
           <button class="acc-head" type="button">
             <span class="acc-title"><span class="acc-ico">🗓️</span>Aktuelle Woche</span>
@@ -162,17 +183,6 @@
               <svg id="trendChart" style="width:100%;height:auto;display:block;background:var(--card);border-radius:var(--radius-md);" viewBox="0 0 400 400" preserveAspectRatio="xMidYMid meet"></svg>
               <div id="barTooltip" style="display:none;position:absolute;background:#1c1f26;color:#fff;border:1px solid rgba(255,255,255,.1);border-radius:14px;padding:10px 14px;font-size:13px;box-shadow:0 8px 24px rgba(0,0,0,.45);z-index:9999;pointer-events:none;text-align:center;white-space:nowrap;"><div style="font-size:11px;color:#98989d;margin-bottom:2px" id="btDate"></div><div style="font-size:22px;font-weight:800;line-height:1.1" id="btHours"></div><div style="font-size:11px;color:#98989d;margin-top:1px">Stunden</div><div style="font-size:20px;font-weight:800;line-height:1.1;margin-top:6px;color:#ffd60a" id="btTips"></div><div style="font-size:11px;color:#98989d;margin-top:1px">Trinkgeld</div></div>
             </div>
-          </div>
-        </div>
-
-        <!-- 4 · Kennzahlen -->
-        <div class="acc" data-acc>
-          <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">🔢</span>Kennzahlen</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
-            <div class="grid stats-grid" id="analysisStats"></div>
           </div>
         </div>
 
@@ -232,11 +242,29 @@
           <span><span class="cal-dot" style="background:#30d158;"></span>Arbeitstag</span>
           <span><span class="cal-dot" style="background:#0a84ff;"></span>Urlaub bezahlt</span>
           <span><span class="cal-dot" style="background:#ff9f0a;"></span>Urlaub unbezahlt</span>
+          <span><span class="cal-dot" style="background:#bf5af2;"></span>geplant (Kalender)</span>
         </div>
         <div class="cal-grid cal-dow">
           <div>Mo</div><div>Di</div><div>Mi</div><div>Do</div><div>Fr</div><div>Sa</div><div>So</div>
         </div>
         <div class="cal-grid" id="calGrid"></div>
+      </div>
+
+      <div class="card" id="calUpcomingCard">
+        <h2>Nächste Schichten</h2>
+        <p class="section-copy">Automatisch aus deinem Kalender-Link — tippe einen Tag an, um die Schicht direkt zu übernehmen.</p>
+        <div id="calUpcoming"></div>
+      </div>
+
+      <div class="card" id="calMonthShiftsCard">
+        <h2>Geplante Schichten im Monat</h2>
+        <p class="section-copy">Aus dem Kalender, mit geschätztem Brutto. Angetippt = Schicht nachtragen.</p>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Datum</th><th>Schicht</th><th class="right">Zeit</th><th class="right">≈ Std</th><th class="right">≈ Brutto</th></tr></thead>
+            <tbody id="calMonthShiftsBody"></tbody>
+          </table>
+        </div>
       </div>
 
       <div class="card" id="calSummaryCard">
@@ -323,6 +351,23 @@
         </div>
         <div id="csvImportStatus" class="status"></div>
         <p class="section-copy" style="margin-top:10px;font-size:12px;color:var(--muted);">Tipp: Die Datei landet im Ordner <strong>Downloads</strong> — von dort kannst du sie in Drive, Nextcloud oder per Mail sichern.</p>
+      </div>
+
+      <div class="card" id="calLinkCard">
+        <h2>Kalender-Link</h2>
+        <p class="section-copy">Schichten aus deinem Dienstplan-Kalender (iCal/.ics — Google, iCloud, Outlook, Nextcloud). Der Link ist nur lesbar, nichts wird dort verändert.</p>
+        <label for="icalUrl">iCal-/ICS-Link</label>
+        <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://…/basic.ics oder webcal://…" />
+        <p class="tip-hint">Google Kalender: Einstellungen → Kalender → „Geheime Adresse im iCal-Format". Der Link bleibt geheim — nicht weitergeben.</p>
+        <label for="icalMinShift" style="margin-top:14px;">Ab wie vielen Stunden gilt ein Termin als Schicht?</label>
+        <input id="icalMinShift" type="text" inputmode="decimal" placeholder="4" />
+        <p class="tip-hint">Kurze Termine (Meeting, Arzt) werden so herausgefiltert. Ganztägige Einträge wie „Urlaub" zählen nie als Schicht.</p>
+        <div class="button-row">
+          <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern &amp; laden</button>
+          <button class="btn-secondary" type="button" onclick="saveIcalMinShift()">Übernehmen</button>
+          <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Entfernen</button>
+        </div>
+        <div id="icalStatus" class="status"></div>
       </div>
 
       <div class="card">
