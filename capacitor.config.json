@@ -1,5 +1,10 @@
 {
   "appId": "de.azt.arbeitszeit",
   "appName": "Arbeitszeit",
-  "webDir": "www"
+  "webDir": "www",
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
 }

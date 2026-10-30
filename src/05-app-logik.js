@@ -1322,6 +1322,34 @@
 
     function hm(min) { return min == null ? '' : `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`; }
 
+    // ── Laden mit CORS-Umgehung ──
+    // Wichtig: Dienstplan-Anbieter (Tanda, Deputy …) senden KEIN
+    // Access-Control-Allow-Origin. Im Browser würde fetch() deshalb scheitern.
+    // In der Android-App läuft alles in einer WebView — Capacitor bietet dafür
+    // CapacitorHttp an, das die Anfrage nativ ausführt (kein CORS).
+    // Reihenfolge: nativ zuerst, im Browser-Fallback normales fetch().
+    async function icalLoadText(url) {
+      const target = normalizeIcalUrl(url);
+      const CapHttp = window.Capacitor?.Plugins?.CapacitorHttp;
+
+      if (isNative && CapHttp) {
+        const res = await CapHttp.get({
+          url: target,
+          headers: { Accept: 'text/calendar, text/plain, */*' },
+          connectTimeout: 15000,
+          readTimeout: 15000,
+        });
+        if (res.status >= 400) throw new Error('HTTP ' + res.status);
+        // data kann String oder bereits geparstes Objekt sein
+        return typeof res.data === 'string' ? res.data : JSON.stringify(res.data);
+      }
+
+      // Browser/Vorschau: hier gilt CORS. Für lokale Tests und offene Feeds ok.
+      const res = await fetch(target, { cache: 'no-store', redirect: 'follow' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      return res.text();
+    }
+
     function icalFetch(force) {
       const url = getIcalUrl();
       if (!url) { icalEvents = []; return Promise.resolve([], false); }
@@ -1340,13 +1368,8 @@
 
       if (icalBusy) return Promise.resolve(icalEvents, true);
       icalBusy = true;
-      const httpUrl = url.replace(/^webcal:\/\//i, 'https://');
       icalStatusAttr('Kalender wird geladen …', '');
-      return fetch(httpUrl, { cache: 'no-store' })
-        .then(res => {
-          if (!res.ok) throw new Error('HTTP ' + res.status);
-          return res.text();
-        })
+      return icalLoadText(url)
         .then(text => {
           if (!/BEGIN:VCALENDAR/i.test(text)) throw new Error('Das ist kein iCal-Kalender.');
           // Erst RRULE entfalten (Tanda: eine Regel = viele Schichten), dann filtern
@@ -1369,8 +1392,21 @@
           return icalEvents;
         })
         .catch(err => {
-          icalStatusAttr('Kalender-Link konnte nicht geladen werden (' + (err.message || err) + '). '
-            + 'Bei Google: muss mit https://…ical beginnen und öffentlich (geheim) freigegeben sein.', 'error');
+          const msg = String(err.message || err);
+          let hint = '';
+          if (/Failed to fetch|NetworkError|Load failed/i.test(msg)) {
+            // Häufigste Ursachen der Reihe nach — ohne Fachbegriffe
+            hint = ' Der Link ist nicht erreichbar. Prüfe: (1) ist er komplett kopiert, '
+              + 'ohne Leerzeichen am Ende? (2) funktioniert er im Browser, wenn du ihn dort einfügst? '
+              + '(3) ist er noch gültig — manche Anbieter erneuern ihn, wenn du das Passwort änderst?';
+          } else if (/HTTP 40[13]/.test(msg)) {
+            hint = ' Der Anbieter verweigert den Zugriff. Der Link ist vermutlich abgelaufen '
+              + 'oder wurde neu erzeugt — hol ihn in der App deines Arbeitgebers noch einmal.';
+          } else if (/kein iCal/i.test(msg)) {
+            hint = ' Die Adresse liefert keinen Kalender. Das passiert, wenn statt des '
+              + 'iCal-Links die normale Webseite kopiert wurde.';
+          }
+          icalStatusAttr('Kalender konnte nicht geladen werden (' + msg + ').' + hint, 'error');
           return icalEvents;
         })
         .finally(() => { icalBusy = false; });
@@ -1444,15 +1480,62 @@
         : '<tr><td colspan="5" class="empty-state"><div class="empty-icon">🗓️</div><div class="empty-title">Keine geplanten Schichten.</div><div class="empty-sub">In diesem Monat steht nichts im Kalender.</div></td></tr>';
     }
 
+    // ── Link normalisieren ──
+    // Dienstplan-Anbieter (Tanda, Deputy, Personio …) geben den Link in sehr
+    // unterschiedlichen Formen aus. Statt den Nutzer mit „muss mit https:// beginnen"
+    // abzuweisen, reparieren wir die Eingabe:
+    //   webcal://host/x        → https://host/x        (iOS-Abo-Konvention)
+    //   host/x                 → https://host/x        (ohne Protokoll kopiert)
+    //   http://host/x          → https://host/x        (App läuft unter https)
+    //   "…ics" mit Leerzeichen → getrimmt
+    function normalizeIcalUrl(input) {
+      let s = String(input || '').trim();
+      if (!s) return '';
+
+      // Kopierte Links kommen manchmal mit Anführungszeichen oder als Markdown
+      s = s.replace(/^[<"'\[]+/, '').replace(/[>"'\]]+$/, '').trim();
+
+      // Relativer Pfad (z. B. "/kalender.ics") — für lokale Tests/Intranet.
+      // Bleibt relativ, damit fetch() ihn gegen den aktuellen Origin auflöst.
+      if (/^\/[^/]/.test(s)) return s;
+
+      // webcal → https (fetch kann webcal:// nicht laden)
+      s = s.replace(/^webcal:\/\//i, 'https://');
+      // webcals (Safari-Variante) ebenfalls
+      s = s.replace(/^webcals:\/\//i, 'https://');
+
+      // Ohne Protokoll: Punkt im ersten Segment = Hostname
+      // („localhost:8091/x" hat keinen Punkt — das ist auch ein gültiger Host)
+      if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+        if (/^[a-z0-9.-]+\.[a-z]{2,}(?:[/:?#]|$)/i.test(s) || /^localhost(?::\d+)?(?:[/?#]|$)/i.test(s)) s = 'https://' + s;
+        else return '';
+      }
+
+      // http → https, damit es im WebView nicht als Mixed Content blockiert wird
+      s = s.replace(/^http:\/\//i, 'https://');
+
+      // Leerzeichen im Pfad kodieren (kommt bei kopierten Links vor)
+      s = s.replace(/ /g, '%20');
+
+      return s;
+    }
+
     // Einstellungen: Link speichern / entfernen
     window.saveIcalSettings = async function () {
       const raw = (document.getElementById('icalUrl')?.value || '').trim();
       if (!raw) { icalStatusAttr('Bitte einen Kalender-Link eingeben.', 'error'); return; }
-      if (!/^(https?:\/\/|webcal:\/\/)/i.test(raw)) {
-        icalStatusAttr('Der Link muss mit https:// oder webcal:// beginnen.', 'error');
+
+      const url = normalizeIcalUrl(raw);
+      if (!url) {
+        icalStatusAttr('Das sieht nicht wie ein Link aus. Beispiel: '
+          + 'https://eu.tanda.co/… — oder der Link beginnt mit webcal://', 'error');
         return;
       }
-      try { localStorage.setItem(ICAL_KEY, raw); } catch (e) {}
+      // Nutzer sehen, was tatsächlich gespeichert wird (Transparenz bei webcal→https)
+      const inp = document.getElementById('icalUrl');
+      if (inp) inp.value = url;
+
+      try { localStorage.setItem(ICAL_KEY, url); } catch (e) {}
       try { localStorage.removeItem(ICAL_CACHE_KEY); } catch (e) {}
       icalEvents = [];
       await icalFetch(true);
@@ -1484,9 +1567,7 @@
       if (!url) { icalStatusAttr('Kein Link hinterlegt.', 'error'); return; }
       icalStatusAttr('Analysiere Feed …', '');
       try {
-        const res = await fetch(url.replace(/^webcal:\/\//i, 'https://'), { cache: 'no-store' });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const text = await res.text();
+        const text = await icalLoadText(url);
         const raw = icalParse(text);
 
         const withZ = (text.match(/DTSTART[^:\r\n]*:\d{8}T\d{6}Z/g) || []).length;
