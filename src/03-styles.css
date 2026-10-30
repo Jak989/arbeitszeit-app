@@ -48,10 +48,11 @@
       scroll-behavior: smooth;
       -webkit-overflow-scrolling: touch;
       overscroll-behavior-y: contain;
-      /* Kein horizontales Überziehen — sonst wackelt die feste Tab-Leiste */
-      overflow-x: hidden;
-      /* Gummiband der ganzen Seite aus: Bedienelemente sollen stehen wie in einer App */
-      overscroll-behavior: none;
+      /* KEIN `overflow-x: hidden` hier! Es macht html/body zum eigenen
+         Scroll-Container und blockiert dann JEDES Scrollen (Mausrad wie
+         Touch-Geste), obwohl programmatisches scrollTo weiter funktioniert.
+         Gegen seitliches Überziehen reicht `overscroll-behavior` + die
+         Begrenzung unten am .app-Container. */
     }
     body {
       margin: 0;
@@ -61,12 +62,10 @@
       min-height: 100vh;
       min-height: -webkit-fill-available;
       min-height: 100dvh;
-      max-width: 100vw;
-      overflow-x: hidden;
       transition: background .35s ease, color .25s ease;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
-      overscroll-behavior-y: none;
+      overscroll-behavior-y: contain;
     }
     [data-theme="dark"] body {
       background:
@@ -114,6 +113,11 @@
       padding-bottom: calc(120px + var(--safe-bottom));
       padding-left: calc(16px + var(--safe-left));
       padding-right: calc(16px + var(--safe-right));
+      /* Begrenzt seitliches Überlaufen hier statt global an html/body —
+         dort würde `overflow-x: hidden` das Scrollen komplett blockieren.
+         `clip` verhindert das Wackeln der festen Tab-Leiste ohne
+         einen neuen Scroll-Container zu erzeugen. */
+      overflow-x: clip;
     }
 
     /* ── Theme toggle ── */
@@ -216,10 +220,10 @@
       backdrop-filter: blur(28px);
       -webkit-backdrop-filter: blur(28px);
       border-top: 1px solid var(--line);
-      /* Leiste darf selbst nicht mitscrollen oder federn */
+      /* Leiste darf selbst nicht mitscrollen oder federn.
+         KEIN `contain: layout paint` — das kann die Scroll-Kette stören
+         und bringt hier keinen messbaren Vorteil. */
       transform: translateZ(0);
-      will-change: transform;
-      contain: layout paint;
       touch-action: manipulation;
       -webkit-user-select: none;
       user-select: none;
