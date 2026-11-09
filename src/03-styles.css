@@ -174,6 +174,17 @@
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
+      /* Der Header ist eng: Theme-Button + Zahnrad müssen beide passen,
+         sonst schiebt der Zahnrad-Button sich aus dem Viewport (x=442 bei
+         390px Breite). min-width:0 auf dem Textteil gibt ihm den Platz. */
+    }
+    .hero-top > div:first-child { min-width: 0; }
+    .eyebrow { flex: 1 1 auto; min-width: 0; }
+
+    /* Auf schmalen Geräten nur das Symbol, Text weg */
+    @media (max-width: 430px) {
+      .theme-toggle #themeLabel { display: none; }
+      .theme-toggle { padding: 7px 10px; }
     }
 
     /* ── Zahnrad: Einstellungen, in jedem Tab erreichbar ──
@@ -1003,18 +1014,40 @@
     }
     .dd-close {
       flex-shrink: 0;
-      width: 30px;
-      height: 30px;
+      /* 44×44 = Apple-HIG-Minimum. Vorher 30px mit 17px-Unicode-Glyph:
+         zu klein zum Treffen UND optisch schief, weil ✕ eine asymmetrische
+         Zeilenbox hat. Jetzt SVG auf Grid-Zentrierung — keine Font-Metriken.
+         min-height/max-height explizit, sonst überschreibt die globale
+         Button-Regel (min-height:48px) die quadratische Form. */
+      width: 44px;
+      height: 44px;
+      min-width: 44px;
+      min-height: 44px;
+      max-width: 44px;
+      max-height: 44px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      margin: -6px -6px 0 0;
       border-radius: 999px;
       border: 1px solid var(--line);
       background: var(--card-2, rgba(127,127,127,.08));
       color: var(--muted);
-      font-size: 17px;
-      line-height: 1;
       cursor: pointer;
       -webkit-tap-highlight-color: transparent;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: manipulation;
+      transition: background .16s ease, color .16s ease, transform .14s var(--spring-out);
+    }
+    .dd-close svg {
+      width: 19px;
+      height: 19px;
+      display: block;
     }
     .dd-close:active { transform: scale(.92); }
+    .dd-close:hover { color: var(--text); }
+    .dd-close:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
     .dd-body {
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;

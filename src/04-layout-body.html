@@ -27,7 +27,7 @@
   <div class="app">
     <section class="hero">
       <div class="hero-top">
-        <div class="eyebrow">Arbeitszeit &amp; Trinkgeld</div>
+        <div class="eyebrow">Schichtbuch</div>
         <div class="hero-actions">
           <button class="theme-toggle" id="themeToggle" type="button" title="Dark Mode umschalten">
             <span class="icon" id="themeIcon">☀️</span>
@@ -110,6 +110,32 @@
 
       <div id="overviewContent" style="display:none">
 
+        <!-- ═══ FESTER KOPF: Soll/Ist + Kennzahlen ═══
+             Diese beiden Blöcke sind in JEDEM Bereich sichtbar. Genau das war
+             beim ersten Umbau verloren gegangen: sie waren in den
+             Fortschritt-Reiter gerutscht und damit weg, sobald man einen
+             anderen Bereich ansah. -->
+        <div class="analysis-head">
+          <div class="card sollist" id="sollIstCard">
+            <div class="si-head">
+              <div>
+                <div class="si-eyebrow">Soll / Ist</div>
+                <h2 id="siTitle">Dieser Monat</h2>
+              </div>
+              <div class="si-period" id="siPeriodSwitch">
+                <button class="si-tab active" type="button" data-period="week">Woche</button>
+                <button class="si-tab" type="button" data-period="month">Monat</button>
+                <button class="si-tab" type="button" data-period="year">Jahr</button>
+              </div>
+            </div>
+            <div id="sollIstBody"></div>
+          </div>
+
+          <div class="card quickstats">
+            <div class="qs-grid" id="overviewStats"></div>
+          </div>
+        </div>
+
         <!-- Panel: Fortschritt & Erfolge (Startpanel des Untermenüs) -->
         <div class="subpanel" id="sub-progress" role="tabpanel">
           <div class="card">
@@ -148,27 +174,6 @@
             <h3 class="ach-head">Erfolge <span class="ach-count" id="badgeCount"></span></h3>
             <div class="badges" id="badgeGrid"></div>
           </div>
-        </div>
-
-        <!-- 0 · Soll/Ist: geplant vs. gearbeitet (Kern des Analyse-Tabs) -->
-        <div class="card sollist" id="sollIstCard">
-          <div class="si-head">
-            <div>
-              <div class="si-eyebrow">Soll / Ist</div>
-              <h2 id="siTitle">Dieser Monat</h2>
-            </div>
-            <div class="si-period" id="siPeriodSwitch">
-              <button class="si-tab active" type="button" data-period="week">Woche</button>
-              <button class="si-tab" type="button" data-period="month">Monat</button>
-              <button class="si-tab" type="button" data-period="year">Jahr</button>
-            </div>
-          </div>
-          <div id="sollIstBody"></div>
-        </div>
-
-        <!-- 1 · Die vier Zahlen, die zählen — immer sichtbar, ohne Aufklappen -->
-        <div class="card quickstats">
-          <div class="qs-grid" id="overviewStats"></div>
         </div>
 
         <!-- ═══ UNTERMENÜ: genau ein Bereich sichtbar ═══
@@ -455,7 +460,7 @@
         <div class="dd-title" id="ddTitle">Details</div>
         <div class="dd-sub" id="ddSub"></div>
       </div>
-      <button class="dd-close" type="button" id="ddClose" aria-label="Schließen">✕</button>
+      <button class="dd-close" type="button" id="ddClose" aria-label="Schließen"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="dd-body" id="ddBody"></div>
   </div>
@@ -469,7 +474,7 @@
         <div class="dd-title" id="setTitle">Einstellungen</div>
         <div class="dd-sub">Kalender-Link und Sicherung</div>
       </div>
-      <button class="dd-close" type="button" id="setClose" aria-label="Schließen">✕</button>
+      <button class="dd-close" type="button" id="setClose" aria-label="Schließen"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
     </div>
     <div class="dd-body">
       <div class="set-block">

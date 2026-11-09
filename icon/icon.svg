@@ -1,32 +1,57 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  App-Icon "Arbeitszeit"
-  Motiv: Uhr (Arbeitszeit) — bewusst reduziert, damit es auch bei 48 px lesbar bleibt.
-  Stil:  Strichzeichnung, passend zu den Tab-Symbolen der App.
-  Farbe: Akzentblau #007aff auf Weiß.
+  App-Icon "Schichtbuch"
+  Motiv: Schichtring, der oben offen ist (Arbeitstag, der läuft) + Zeiger als
+  Stundenzeiger. Der offene Ring ist die Besonderheit: er symbolisiert "läuft
+  noch" statt "abgeschlossen". Bei 48 px bleibt er durch die Lücke erkennbar.
+  Farben: Nachtblau-Grund, warmes Amber als Akzent (= Trinkgeld, Gegenstück
+  zum kühlen Blau der Arbeit). Kein Strichmännchen, keine Uhr mit Zahlen —
+  beides zu generisch.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#3d9bff"/>
-      <stop offset="100%" stop-color="#0057bd"/>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0%" stop-color="#1b2a4a"/>
+      <stop offset="100%" stop-color="#0d1526"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffcf5c"/>
+      <stop offset="100%" stop-color="#f5a623"/>
+    </linearGradient>
+    <linearGradient id="cool" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#8fb7ff"/>
+      <stop offset="100%" stop-color="#4f86ff"/>
     </linearGradient>
   </defs>
 
-  <!-- Hintergrund -->
-  <rect x="0" y="0" width="512" height="512" rx="112" ry="112" fill="url(#bg)"/>
+  <!-- Grundfläche: abgerundetes Quadrat -->
+  <rect x="0" y="0" width="512" height="512" rx="116" ry="116" fill="url(#bg)"/>
 
-  <!-- Uhr: kräftiger Kreis -->
-  <circle cx="256" cy="256" r="150"
-          fill="none" stroke="#ffffff" stroke-width="40"
-          stroke-linecap="round"/>
+  <!-- Dezenter Radial-Glow hinter dem Motiv, gibt Tiefe ohne Verlauf-Ballast -->
+  <circle cx="256" cy="248" r="196" fill="#4f86ff" opacity="0.07"/>
 
-  <!-- Zeiger: 15 Minuten nach voll (deutlich, dick) -->
-  <path d="M256 256 L256 160"
-        fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round"/>
-  <path d="M256 256 L330 256"
-        fill="none" stroke="#ffffff" stroke-width="40" stroke-linecap="round"/>
+  <!-- Offener Schichtring: 300° Bogen, Lücke oben rechts.
+       startet bei -60° und läuft 300° — die Lücke sitzt bewusst dort,
+       wo sonst der Stundenzeiger "12" hätte. -->
+  <path d="M 256 96
+           A 152 152 0 1 1 148 372"
+        fill="none" stroke="url(#cool)" stroke-width="34" stroke-linecap="round"/>
+
+  <!-- Fortschritts-Akzent: ein Viertel des Rings in Amber = die Stunden des Tages -->
+  <path d="M 256 96
+           A 152 152 0 0 1 385 173"
+        fill="none" stroke="url(#amber)" stroke-width="34" stroke-linecap="round"/>
+
+  <!-- Zeiger: Stundenzeiger nach oben (12), Minutenzeiger als kurzer Stummel bei 4 -->
+  <path d="M 256 256 L 256 168" fill="none" stroke="#ffffff" stroke-width="30" stroke-linecap="round"/>
+  <path d="M 256 256 L 314 290" fill="none" stroke="#ffffff" stroke-width="26" stroke-linecap="round" opacity="0.85"/>
 
   <!-- Mittelpunkt -->
-  <circle cx="256" cy="256" r="20" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="20" fill="url(#amber)"/>
+
+  <!-- Trinkgeld-Münze unten rechts: bewusst OHNE Währungszeichen.
+       Bei 32 px verschmiert jede Prägung zu einem Fleck — ein einzelner
+       kräftiger Strich bleibt als "Münze" lesbar. -->
+  <circle cx="388" cy="388" r="64" fill="url(#amber)"/>
+  <path d="M 388 356 v 64" fill="none" stroke="#0d1526" stroke-width="14" stroke-linecap="round"/>
 </svg>

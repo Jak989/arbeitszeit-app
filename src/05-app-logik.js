@@ -361,7 +361,14 @@
     }
 
     // ── Tab activation ──
-    function activateTab(targetId) {
+    function activateTab(targetId, opts) {
+      // Tab-Wechsel auf den Back-Stack legen, damit Android-Zurück zum
+      // vorherigen Tab führt statt die App zu beenden.
+      const fromHistory = opts && opts.fromHistory;
+      const prevTab = state.activeTab;
+      if (!fromHistory && navReady && prevTab && prevTab !== targetId) {
+        navPush(() => activateTab(prevTab, { fromHistory: true }));
+      }
       document.querySelectorAll('.tab-panel').forEach(panel =>
         panel.classList.toggle('active', panel.id === targetId)
       );
@@ -648,6 +655,69 @@
     }
 
     // ═══════════════════════════════════════════════════════════════════
+    //  NAVIGATIONS-STACK (Android-Zurück)
+    //  Problem vorher: WebView hatte nur einen History-Eintrag, Sheets waren
+    //  reines CSS. Android-Back fand nichts zum Zurückgehen → Activity beendet.
+    //  Lösung: jede schließbare Ebene (Sheet, Drill-Down, Tabwechsel) legt
+    //  einen Eintrag auf den Stack UND pusht einen History-State. Back arbeitet
+    //  den Stack von oben ab; ganz unten wird die App minimiert statt gekillt.
+    // ═══════════════════════════════════════════════════════════════════
+    const navStack = [];      // [{ close: fn }]
+    let suppressPop = 0;      // unterdrückt unser eigenes history.back()
+    let navReady = false;
+
+    function navPush(closeFn) {
+      if (!navReady) return;             // vor dem ersten Init nichts tun
+      navStack.push({ close: closeFn });
+      try { history.pushState({ depth: navStack.length }, ''); } catch (_) {}
+    }
+
+    function navPopTop() {
+      const top = navStack.pop();
+      if (top && typeof top.close === 'function') {
+        try { top.close(); } catch (_) {}
+      }
+    }
+
+    // UI schließt eine Ebene selbst (X-Button, Backdrop): Stack konsumieren
+    function navCloseTop() {
+      if (!navStack.length) return;
+      suppressPop++;
+      try { history.back(); } catch (_) {}
+      navPopTop();
+    }
+
+    window.addEventListener('popstate', () => {
+      if (suppressPop > 0) { suppressPop--; return; }
+      if (navStack.length > 0) {
+        navPopTop();
+        return;
+      }
+      // Ganz unten: nicht killen, sondern in den Hintergrund
+      const AppPlugin = window.Capacitor?.Plugins?.App;
+      if (AppPlugin && AppPlugin.minimizeApp) {
+        AppPlugin.minimizeApp();
+        try { history.pushState({ depth: 0 }, ''); } catch (_) {}
+      }
+    });
+
+    // Capacitor-Back (Android-Hardware + Predictive Back)
+    (function wireHardwareBack() {
+      const AppPlugin = window.Capacitor?.Plugins?.App;
+      if (!AppPlugin || !AppPlugin.addListener) return;
+      AppPlugin.addListener('backButton', () => {
+        if (navStack.length > 0) {
+          navPopTop();
+          // History-Eintrag ebenfalls abbauen, damit Zähler synchron bleibt
+          suppressPop++;
+          try { history.back(); } catch (_) {}
+        } else if (AppPlugin.minimizeApp) {
+          AppPlugin.minimizeApp();
+        }
+      });
+    })();
+
+    // ═══════════════════════════════════════════════════════════════════
     //  DRILL-DOWN
     //  Prinzip: jede Zahl im Analyse-Tab ist antippbar und öffnet die
     //  Schichten, aus denen sie entstanden ist. Ein Sheet, viele Inhalte.
@@ -669,10 +739,12 @@
       sheet.classList.add('open');
       ddState.open = true;
       document.getElementById('ddBody').scrollTop = 0;
-      if (history.state?.dd !== true) history.pushState({ dd: true }, '');
+      // Jedes Öffnen bekommt einen Back-Eintrag (auch Wechsel im selben Sheet)
+      navPush(() => ddCloseSilent());
     }
 
-    function ddClose() {
+    // Schließt ohne den Stack anzufassen — wird vom Stack selbst aufgerufen
+    function ddCloseSilent() {
       const sheet = document.getElementById('ddSheet');
       const back = document.getElementById('ddBackdrop');
       if (!sheet || !back || !ddState.open) return;
@@ -683,13 +755,25 @@
         try { ddState.lastFocus.focus({ preventScroll: true }); } catch (_) {}
       }
     }
+
+    // Von UI aus (X, Backdrop, Swipe): Stack-Eintrag mit abbauen
+    function ddClose() {
+      const sheet = document.getElementById('ddSheet');
+      if (!sheet || !ddState.open) return;
+      const hadStack = navStack.length > 0;
+      ddCloseSilent();
+      if (hadStack) {
+        suppressPop++;
+        try { history.back(); } catch (_) {}
+        navStack.pop();
+      }
+    }
     window.ddClose = ddClose;
 
     document.getElementById('ddClose')?.addEventListener('click', ddClose);
     document.getElementById('ddBackdrop')?.addEventListener('click', ddClose);
     document.addEventListener('keydown', e => { if (e.key === 'Escape') { ddClose(); setClose(); } });
     // Android-Zurück / Browser-Zurück schließt das Sheet statt die Ansicht zu verlassen
-    window.addEventListener('popstate', () => { if (ddState.open) ddClose(); setClose(); });
     // Wisch-Geste nach unten schließt
     (function ddSwipe() {
       const sheet = document.getElementById('ddSheet');
@@ -2700,15 +2784,27 @@
       if (wg) wg.value = String(getWeekGoal());
       b.classList.add('open');
       s.classList.add('open');
-      if (history.state?.set !== true) history.pushState({ set: true }, '');
+      navPush(() => setCloseSilent());
+    }
+
+    function setCloseSilent() {
+      const s = document.getElementById('setSheet');
+      const b = document.getElementById('setBackdrop');
+      if (!s || !b) return;
+      b.classList.remove('open');
+      s.classList.remove('open');
     }
 
     function setClose() {
       const s = document.getElementById('setSheet');
-      const b = document.getElementById('setBackdrop');
-      if (!s || !b || !s.classList.contains('open')) return;
-      b.classList.remove('open');
-      s.classList.remove('open');
+      if (!s || !s.classList.contains('open')) return;
+      const hadStack = navStack.length > 0;
+      setCloseSilent();
+      if (hadStack) {
+        suppressPop++;
+        try { history.back(); } catch (_) {}
+        navStack.pop();
+      }
     }
     window.setOpen = setOpen;
     window.setClose = setClose;
@@ -3070,7 +3166,10 @@
     initTheme();
     restoreState();
     restoreSubpanel();
-    activateTab(state.activeTab);
+    // Basis-Eintrag, damit der erste Back nicht sofort die App beendet
+    try { history.replaceState({ depth: 0 }, ''); } catch (_) {}
+    navReady = true;
+    activateTab(state.activeTab, { fromHistory: true });
     form.date.value = todayStr();
     loadData();
   </script>

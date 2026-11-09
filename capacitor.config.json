@@ -1,6 +1,6 @@
 {
   "appId": "de.azt.arbeitszeit",
-  "appName": "Arbeitszeit",
+  "appName": "Schichtbuch",
   "webDir": "www",
   "plugins": {
     "CapacitorHttp": {
