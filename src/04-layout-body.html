@@ -28,10 +28,16 @@
     <section class="hero">
       <div class="hero-top">
         <div class="eyebrow">Arbeitszeit &amp; Trinkgeld</div>
-        <div style="display:flex;align-items:center;gap:8px;">
+        <div class="hero-actions">
           <button class="theme-toggle" id="themeToggle" type="button" title="Dark Mode umschalten">
             <span class="icon" id="themeIcon">☀️</span>
             <span id="themeLabel">Hell</span>
+          </button>
+          <button class="gear-btn" id="settingsBtn" type="button" aria-label="Einstellungen öffnen" title="Einstellungen">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3.1"/>
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+            </svg>
           </button>
         </div>
       </div>
@@ -104,13 +110,10 @@
 
       <div id="overviewContent" style="display:none">
 
-        <!-- ═══ ERFOLGE & FORTSCHRITT (zurückgeholt) ═══ -->
-        <div class="acc" data-acc id="progressAcc">
-          <button class="acc-head" type="button">
-            <span class="acc-title"><span class="acc-ico">🏆</span>Fortschritt & Erfolge</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
+        <!-- Panel: Fortschritt & Erfolge (Startpanel des Untermenüs) -->
+        <div class="subpanel" id="sub-progress" role="tabpanel">
+          <div class="card">
+            <h2>Fortschritt &amp; Erfolge</h2>
             <div class="goal-row">
               <div class="goal-ring-wrap">
                 <svg class="goal-ring" viewBox="0 0 120 120">
@@ -168,36 +171,69 @@
           <div class="qs-grid" id="overviewStats"></div>
         </div>
 
-        <!-- 2 · Kennzahlen (zugeklappt, Detailtiefe) -->
-        <div class="acc" data-acc>
-          <button class="acc-head" type="button">
-            <span class="acc-title">Weitere Kennzahlen</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
+        <!-- ═══ UNTERMENÜ: genau ein Bereich sichtbar ═══
+             Statt mehrerer gleichzeitig offener Accordions gibt es hier eine
+             horizontale Reiter-Leiste: ein Tipp = ein Bereich, alle anderen zu.
+             Das ist der Unterschied zwischen „mehrere Klappen offen" und
+             „ein Bereich, den ich mir aussuche". -->
+        <div class="subnav-wrap">
+          <nav class="subnav" id="analysisSubnav" role="tablist" aria-label="Analyse-Bereiche">
+            <button class="subnav-btn active" type="button" role="tab" data-sub="progress" aria-selected="true">
+              <span class="subnav-ico">🏆</span>Fortschritt
+            </button>
+            <button class="subnav-btn" type="button" role="tab" data-sub="metrics" aria-selected="false">
+              <span class="subnav-ico">📊</span>Kennzahlen
+            </button>
+            <button class="subnav-btn" type="button" role="tab" data-sub="week" aria-selected="false">
+              <span class="subnav-ico">📆</span>Woche
+            </button>
+            <button class="subnav-btn" type="button" role="tab" data-sub="trend" aria-selected="false">
+              <span class="subnav-ico">📈</span>Verlauf
+            </button>
+            <button class="subnav-btn" type="button" role="tab" data-sub="compare" aria-selected="false">
+              <span class="subnav-ico">⚖️</span>Vergleich
+            </button>
+            <button class="subnav-btn" type="button" role="tab" data-sub="monthly" aria-selected="false">
+              <span class="subnav-ico">🗓️</span>Monate
+            </button>
+          </nav>
+        </div>
+
+        <!-- Panel: Kennzahlen -->
+        <div class="subpanel" id="sub-metrics" role="tabpanel" hidden>
+          <div class="card">
+            <h2>Weitere Kennzahlen</h2>
             <div class="grid stats-grid" id="analysisStats"></div>
           </div>
         </div>
 
-        <!-- 3 · Diese Woche / Letzter Eintrag -->
-        <div class="acc" data-acc>
-          <button class="acc-head" type="button">
-            <span class="acc-title">Aktuelle Woche</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
+        <!-- Panel: Woche (mit Wochenauswahl) -->
+        <div class="subpanel" id="sub-week" role="tabpanel" hidden>
+          <div class="card">
+            <div class="wk-head">
+              <div>
+                <div class="wk-eyebrow">Wochenauswahl</div>
+                <h2 id="wkTitle">Diese Woche</h2>
+              </div>
+              <div class="wk-nav">
+                <button class="wk-arrow" type="button" id="wkPrev" aria-label="Woche zurück">‹</button>
+                <button class="wk-arrow" type="button" id="wkNext" aria-label="Woche vor">›</button>
+              </div>
+            </div>
+
+            <div class="wk-picker" id="wkPicker" role="tablist" aria-label="Woche wählen"></div>
+
+            <div class="wk-rate" id="wkRate"></div>
             <div class="grid stats-grid" id="weekFocus" style="margin-bottom:12px;"></div>
             <div id="lastShiftCard"></div>
+            <div class="wk-shifts" id="wkShifts"></div>
           </div>
         </div>
 
-        <!-- 3 · Zeitverlauf -->
-        <div class="acc" data-acc>
-          <button class="acc-head" type="button">
-            <span class="acc-title">Zeitverlauf</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
+        <!-- Panel: Zeitverlauf -->
+        <div class="subpanel" id="sub-trend" role="tabpanel" hidden>
+          <div class="card">
+            <h2>Zeitverlauf</h2>
             <div class="chart-legend">
               <span><span class="legend-dot" style="background:#0a84ff;"></span>Stunden</span>
               <span><span class="legend-dot" style="background:#ffd60a;"></span>Trinkgeld</span>
@@ -228,24 +264,18 @@
           </div>
         </div>
 
-        <!-- 5 · KW-Vergleich -->
-        <div class="acc" data-acc>
-          <button class="acc-head" type="button">
-            <span class="acc-title">Wochenvergleich</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
+        <!-- Panel: Wochenvergleich -->
+        <div class="subpanel" id="sub-compare" role="tabpanel" hidden>
+          <div class="card">
+            <h2>Wochenvergleich</h2>
             <div class="bars" id="weekBars"></div>
           </div>
         </div>
 
-        <!-- 6 · Monatsübersicht -->
-        <div class="acc" data-acc>
-          <button class="acc-head" type="button">
-            <span class="acc-title">Monatsübersicht</span>
-            <span class="acc-chev">›</span>
-          </button>
-          <div class="acc-body">
+        <!-- Panel: Monatsübersicht -->
+        <div class="subpanel" id="sub-monthly" role="tabpanel" hidden>
+          <div class="card">
+            <h2>Monatsübersicht</h2>
             <div class="table-wrap" style="margin-bottom:0;">
               <table>
                 <thead>
@@ -391,47 +421,6 @@
     <!-- ═══ TAB: Datenbank ═══ -->
     <section id="database" class="tab-panel">
 
-      <!-- ═══ EINSTELLUNGEN (aufklappbar) ═══ -->
-      <div class="acc" id="settingsAcc">
-        <button class="acc-head" type="button">
-          <span class="acc-title"><span class="acc-ico">⚙️</span>Einstellungen</span>
-          <span class="acc-chev">›</span>
-        </button>
-        <div class="acc-body">
-
-          <div class="card" id="calLinkCard">
-            <h2>Kalender-Link</h2>
-            <label for="icalUrl">iCal-/ICS-Link</label>
-            <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://… oder webcal://…" />
-            <div class="button-row">
-              <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern</button>
-              <button class="btn-secondary" type="button" onclick="diagnoseIcal()">Prüfen</button>
-            </div>
-            <div id="icalStatus" class="status"></div>
-            <details class="hint-details">
-              <summary>Wie komme ich an den Link?</summary>
-              <p><strong>Tanda:</strong> App → Profilfoto → Einstellungen → „Calendar Link" → Kopieren.<br>
-              <strong>Google Kalender:</strong> Einstellungen → Kalender → „Geheime Adresse im iCal-Format".<br>
-              Der Link ist nur lesbar und bleibt geheim.</p>
-              <div class="button-row">
-                <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Link entfernen</button>
-              </div>
-            </details>
-          </div>
-
-          <div class="card">
-            <h2>Sicherung</h2>
-            <div class="button-row">
-              <button onclick="exportCSV()" class="btn-secondary" type="button">CSV exportieren</button>
-              <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">CSV importieren</button>
-              <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
-            </div>
-            <div id="csvImportStatus" class="status"></div>
-          </div>
-
-        </div>
-      </div>
-
       <div class="card">
         <h2>Alle Einträge</h2>
         <div class="table-wrap">
@@ -469,5 +458,60 @@
       <button class="dd-close" type="button" id="ddClose" aria-label="Schließen">✕</button>
     </div>
     <div class="dd-body" id="ddBody"></div>
+  </div>
+
+  <!-- ═══ Einstellungen: eigenes Sheet, aus dem Header-Zahnrad ═══ -->
+  <div class="dd-backdrop" id="setBackdrop"></div>
+  <div class="dd-sheet" id="setSheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+    <div class="dd-grab"></div>
+    <div class="dd-head">
+      <div style="min-width:0;">
+        <div class="dd-title" id="setTitle">Einstellungen</div>
+        <div class="dd-sub">Kalender-Link und Sicherung</div>
+      </div>
+      <button class="dd-close" type="button" id="setClose" aria-label="Schließen">✕</button>
+    </div>
+    <div class="dd-body">
+      <div class="set-block">
+        <h3 class="set-h3">Kalender-Link</h3>
+        <p class="set-hint">Verbindet die App mit deinem Dienstplan (Tanda, Google Kalender, Outlook). Nur lesbar.</p>
+        <label for="icalUrl">iCal-/ICS-Link</label>
+        <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://… oder webcal://…" />
+        <div class="button-row">
+          <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern</button>
+          <button class="btn-secondary" type="button" onclick="diagnoseIcal()">Prüfen</button>
+        </div>
+        <div id="icalStatus" class="status"></div>
+        <details class="hint-details">
+          <summary>Wie komme ich an den Link?</summary>
+          <p><strong>Tanda:</strong> App → Profilfoto → Einstellungen → „Calendar Link" → Kopieren.<br>
+          <strong>Google Kalender:</strong> Einstellungen → Kalender → „Geheime Adresse im iCal-Format".<br>
+          Der Link ist nur lesbar und bleibt geheim.</p>
+          <div class="button-row">
+            <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Link entfernen</button>
+          </div>
+        </details>
+      </div>
+
+      <div class="set-block">
+        <h3 class="set-h3">Sicherung</h3>
+        <p class="set-hint">CSV-Export schreibt alle Schichten und Urlaubstage in eine Datei. Import ergänzt bzw. überschreibt pro Datum.</p>
+        <div class="button-row">
+          <button onclick="exportCSV()" class="btn-secondary" type="button">CSV exportieren</button>
+          <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">CSV importieren</button>
+          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
+        </div>
+        <div id="csvImportStatus" class="status"></div>
+      </div>
+
+      <div class="set-block">
+        <h3 class="set-h3">Wochenziel</h3>
+        <p class="set-hint">Trinkgeld-Ziel pro Woche (Montag bis Sonntag).</p>
+        <div class="goal-set-row">
+          <input id="weekGoal2" type="number" inputmode="numeric" min="10" step="10" placeholder="100" />
+          <button class="btn-secondary" type="button" onclick="saveWeekGoalFromSettings()">Speichern</button>
+        </div>
+      </div>
+    </div>
   </div>
 

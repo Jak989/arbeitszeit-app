@@ -378,6 +378,8 @@
       if (targetId === 'database') { initIcalSettings(); }
       // Chart neu zeichnen, wenn der Übersicht-Tab sichtbar wird (SVG braucht Layout)
       if (targetId === 'stats') {
+        // Untermenü wiederherstellen + Chart des aktiven Panels nachziehen
+        if (typeof restoreSubpanel === 'function') restoreSubpanel();
         // Kalender ggf. nachladen, damit Soll/Ist aktuell ist
         (getIcalUrl() ? icalFetch(false) : Promise.resolve()).then(() => renderSollIst());
         setTimeout(() => { try { renderTrendChart(getTrendRows([...state.rows].sort((a,b)=>a.date.localeCompare(b.date)))); } catch(e){} }, 60);
@@ -685,9 +687,9 @@
 
     document.getElementById('ddClose')?.addEventListener('click', ddClose);
     document.getElementById('ddBackdrop')?.addEventListener('click', ddClose);
-    document.addEventListener('keydown', e => { if (e.key === 'Escape') ddClose(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') { ddClose(); setClose(); } });
     // Android-Zurück / Browser-Zurück schließt das Sheet statt die Ansicht zu verlassen
-    window.addEventListener('popstate', () => { if (ddState.open) ddClose(); });
+    window.addEventListener('popstate', () => { if (ddState.open) ddClose(); setClose(); });
     // Wisch-Geste nach unten schließt
     (function ddSwipe() {
       const sheet = document.getElementById('ddSheet');
@@ -1014,9 +1016,20 @@
         else if (k === 'count') ddShiftCount();
         return;
       }
+      // Wochen-Chips im Wochenwähler: eigene Attribute (data-year + data-week),
+      // NICHT das "year|week"-Format der Vergleichs-Balken. Ohne diese
+      // Unterscheidung landete "undefined" im Sheet-Titel (Bug bis 11/2026).
+      const chip = e.target.closest('.wk-chip[data-year]');
+      if (chip) {
+        pickWeek(chip.dataset.year, chip.dataset.week);
+        return;
+      }
       const week = e.target.closest('[data-week]');
       if (week) {
-        const [y, w] = week.dataset.week.split('|');
+        // Nur das Balken-Format "2026|45" — sonst nicht anfassen
+        const raw = week.dataset.week;
+        if (!raw || !raw.includes('|')) return;
+        const [y, w] = raw.split('|');
         ddWeekDetail(y, w);
         return;
       }
@@ -2441,7 +2454,283 @@
       renderCalendar();
     });
 
-    // Accordion-Verhalten (Übersicht-Tab)
+    // ═══════════════════════════════════════════════════════════════════
+    //  WOCHENAUSWAHL im Analyse-Untermenü „Woche"
+    //  Zeigt Ø Trinkgeld pro Stunde (und die weiteren Kennzahlen) für JEDE
+    //  Woche, nicht nur die laufende. Auswahl per Chips oder Pfeiltasten.
+    // ═══════════════════════════════════════════════════════════════════
+    const WK_KEY = 'azt-weekpick';
+    let wkSelected = null;   // {year, week} — null = aktuellste Woche
+
+    function isoWeekKey(year, week) { return `${year}-KW${String(week).padStart(2, '0')}`; }
+
+    // Alle Wochen mit Daten, aufsteigend. Zusätzlich die laufende Woche,
+    // damit man sie auch ohne Einträge anwählen kann.
+    function weeksWithData() {
+      const map = new Map();
+      for (const r of state.rows) {
+        const k = isoWeekKey(r.week.year, r.week.week);
+        if (!map.has(k)) map.set(k, { year: r.week.year, week: r.week.week, label: r.week.label, rows: [] });
+        map.get(k).rows.push(r);
+      }
+      const nowM = weekMeta(localIso(new Date()));
+      const nowKey = isoWeekKey(nowM.year, nowM.week);
+      if (!map.has(nowKey)) {
+        map.set(nowKey, { year: nowM.year, week: nowM.week, label: nowM.label, rows: [] });
+      }
+      return [...map.values()].sort((a, b) =>
+        a.year !== b.year ? a.year - b.year : a.week - b.week);
+    }
+
+    function weekStats(rows) {
+      const h = rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0);
+      const tips = rows.reduce((s, r) => s + Number(r.tips || 0), 0);
+      return {
+        rows, hours: h, tips,
+        rate: h ? tips / h : 0,
+        perShift: rows.length ? tips / rows.length : 0,
+        best: rows.length ? Math.max(...rows.map(r => Number(r.tips || 0))) : 0,
+      };
+    }
+
+    function renderWeekPanel() {
+      const all = weeksWithData();
+      if (!all.length) return;
+
+      // Auswahl auflösen: gespeicherte Wahl, sonst aktuellste Woche mit Daten
+      if (!wkSelected) {
+        try {
+          const saved = JSON.parse(localStorage.getItem(WK_KEY) || 'null');
+          if (saved && saved.year && saved.week) wkSelected = saved;
+        } catch (_) {}
+      }
+      let idx = all.findIndex(w => wkSelected && w.year === Number(wkSelected.year) && w.week === Number(wkSelected.week));
+      if (idx < 0) {
+        // aktuellste Woche MIT Daten, sonst die letzte
+        const withRows = all.filter(w => w.rows.length);
+        idx = withRows.length ? all.indexOf(withRows[withRows.length - 1]) : all.length - 1;
+        wkSelected = { year: all[idx].year, week: all[idx].week };
+      }
+
+      const w = all[idx];
+      const st = weekStats(w.rows);
+      const nowM = weekMeta(localIso(new Date()));
+      const isCurrent = Number(nowM.year) === Number(w.year) && Number(nowM.week) === Number(w.week);
+
+      const title = document.getElementById('wkTitle');
+      if (title) title.textContent = isCurrent ? `Diese Woche · ${w.label}` : w.label;
+
+      // Pfeile: deaktivieren, wenn am Rand
+      const prev = document.getElementById('wkPrev');
+      const next = document.getElementById('wkNext');
+      if (prev) { prev.disabled = idx <= 0; prev.dataset.idx = String(idx - 1); }
+      if (next) { next.disabled = idx >= all.length - 1; next.dataset.idx = String(idx + 1); }
+
+      // Chips: die letzten 12 Wochen, aktuelle markiert
+      const picker = document.getElementById('wkPicker');
+      if (picker) {
+        // Fenster: bis zur gewählten Woche, mindestens die letzten 12
+        const end = Math.max(idx + 1, 12);
+        const recent = all.slice(Math.max(0, end - 12), end);
+        picker.innerHTML = recent.map(x => {
+          const on = x.year === w.year && x.week === w.week;
+          const cur = Number(nowM.year) === Number(x.year) && Number(nowM.week) === Number(x.week);
+          const r = weekStats(x.rows);
+          return `<button class="wk-chip${on ? ' active' : ''}${cur ? ' current' : ''}" type="button"
+                    role="tab" aria-selected="${on ? 'true' : 'false'}"
+                    data-year="${x.year}" data-week="${x.week}"
+                    title="${x.label}${r.hours ? ' · ' + eur(r.rate) + '/h' : ' · keine Daten'}">
+            <span class="wk-chip-kw">${x.week}</span>
+            <span class="wk-chip-sub">${r.hours ? eur(r.rate) : '—'}</span>
+          </button>`;
+        }).join('');
+      }
+
+      // Hero: Ø Trinkgeld pro Stunde — das ist die Kennzahl, die zählt
+      const rateBox = document.getElementById('wkRate');
+      if (rateBox) {
+        const allRate = (() => {
+          const h = state.rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0);
+          const tp = state.rows.reduce((s, r) => s + Number(r.tips || 0), 0);
+          return h ? tp / h : 0;
+        })();
+        const diff = st.rate - allRate;
+        const verdict = !st.hours ? 'keine Daten in dieser Woche'
+          : (Math.abs(diff) < 0.05 ? 'genau im Schnitt'
+            : (diff > 0 ? `▲ ${eur(Math.abs(diff))} über dem Gesamtschnitt` : `▼ ${eur(Math.abs(diff))} unter dem Gesamtschnitt`));
+        rateBox.innerHTML = `
+          <div class="wk-rate-main">
+            <div class="wk-rate-label">Ø Trinkgeld pro Stunde</div>
+            <div class="wk-rate-value">${st.hours ? eur(st.rate) : '—'}</div>
+            <div class="wk-rate-sub">${verdict}</div>
+          </div>
+          <div class="wk-rate-side">
+            <div class="wk-rate-mini"><span>Stunden</span><strong>${hrs(st.hours)}</strong></div>
+            <div class="wk-rate-mini"><span>Trinkgeld</span><strong>${eur(st.tips)}</strong></div>
+            <div class="wk-rate-mini"><span>Schichten</span><strong>${w.rows.length}</strong></div>
+          </div>`;
+      }
+
+      // Kennzahlen-Kacheln (wie vorher, aber für die gewählte Woche)
+      const wf = document.getElementById('weekFocus');
+      if (wf) wf.innerHTML = [
+        ['Kalenderwoche', w.label, isCurrent ? 'Die laufende Woche' : 'Ausgewählte Woche'],
+        ['Stunden', hrs(st.hours), `${w.rows.length} ${w.rows.length === 1 ? 'Schicht' : 'Schichten'}`],
+        ['Trinkgeld', eur(st.tips), 'Gesamt dieser Woche'],
+        ['Ø pro Schicht', eur(st.perShift), 'Trinkgeld je Schicht'],
+      ].map(([label, value, hint]) =>
+        `<div class="metric"><div class="label">${label}</div><div class="value">${value}</div><div class="hint">${hint}</div></div>`
+      ).join('');
+
+      // Letzter Eintrag der Woche
+      const lsc = document.getElementById('lastShiftCard');
+      if (lsc) {
+        const last = w.rows[w.rows.length - 1];
+        lsc.innerHTML = last
+          ? `<div class="metric"><div class="label">Letzte Schicht · ${dateFmt(last.date)}</div><div class="value">${hrs(last.actualHoursManual)}</div><div class="hint">${eur(last.tips)} · ${last.note || 'Ohne Notiz'}</div></div>`
+          : `<div class="metric"><div class="label">Keine Schicht erfasst</div><div class="value">—</div><div class="hint">Für diese Woche ist nichts eingetragen.</div></div>`;
+      }
+
+      // Die Schichten der Woche — antippbar zum Bearbeiten
+      const sh = document.getElementById('wkShifts');
+      if (sh) {
+        sh.innerHTML = w.rows.length
+          ? `<h3 class="wk-shifts-head">Schichten dieser Woche</h3>` +
+            w.rows.slice().reverse().map(r => {
+              const rate = Number(r.actualHoursManual) ? Number(r.tips || 0) / Number(r.actualHoursManual) : 0;
+              return `<div class="dd-row" role="button" tabindex="0" data-edit="${r.date}">
+                <div class="dd-row-main">
+                  <div class="dd-row-day">${weekdayName(r.date)}</div>
+                  <div class="dd-row-meta">${r.note || 'Ohne Notiz'}</div>
+                </div>
+                <div class="dd-row-val">
+                  <div class="dd-row-h">${hrs(r.actualHoursManual)}</div>
+                  <div class="dd-row-t">${eur(r.tips)} · ${eur(rate)}/h</div>
+                </div>
+              </div>`;
+            }).join('')
+          : '';
+      }
+    }
+    window.renderWeekPanel = renderWeekPanel;
+
+    function pickWeek(year, week) {
+      wkSelected = { year: Number(year), week: Number(week) };
+      try { localStorage.setItem(WK_KEY, JSON.stringify(wkSelected)); } catch (_) {}
+      renderWeekPanel();
+    }
+
+    document.getElementById('wkPrev')?.addEventListener('click', e => {
+      const i = Number(e.currentTarget.dataset.idx);
+      const all = weeksWithData();
+      if (i >= 0 && all[i]) pickWeek(all[i].year, all[i].week);
+    });
+    document.getElementById('wkNext')?.addEventListener('click', e => {
+      const i = Number(e.currentTarget.dataset.idx);
+      const all = weeksWithData();
+      if (i >= 0 && all[i]) pickWeek(all[i].year, all[i].week);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  UNTERMENÜ im Analyse-Tab
+    //  Genau ein Bereich sichtbar. Kein „mehrere Klappen offen"-Gefühl.
+    //  Auswahl wird gemerkt, damit man beim Zurückkommen da weitermacht.
+    // ═══════════════════════════════════════════════════════════════════
+    const SUB_KEY = 'azt-subpanel';
+    let subActive = 'progress';
+
+    function setSubpanel(key, save) {
+      const panels = document.querySelectorAll('#stats .subpanel');
+      if (!panels.length) return;
+      let found = false;
+      panels.forEach(pn => {
+        const on = pn.id === 'sub-' + key;
+        pn.hidden = !on;
+        if (on) found = true;
+      });
+      if (!found) return;
+      subActive = key;
+      document.querySelectorAll('#analysisSubnav .subnav-btn').forEach(b => {
+        const on = b.dataset.sub === key;
+        b.classList.toggle('active', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      // aktiven Reiter in die Mitte der Leiste holen
+      const act = document.querySelector('#analysisSubnav .subnav-btn.active');
+      if (act && act.scrollIntoView) {
+        try { act.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); } catch (_) {}
+      }
+      if (save !== false) {
+        try { localStorage.setItem(SUB_KEY, key); } catch (_) {}
+      }
+      if (key === 'week') { renderWeekPanel(); }
+      // Charts brauchen Layout, sonst zeichnen sie mit Breite 0
+      if (key === 'trend') {
+        setTimeout(() => {
+          try {
+            renderTrendChart(getTrendRows([...state.rows].sort((a,b)=>a.date.localeCompare(b.date))));
+          } catch (_) {}
+        }, 60);
+      }
+    }
+    window.setSubpanel = setSubpanel;
+
+    document.querySelectorAll('#analysisSubnav .subnav-btn').forEach(btn => {
+      btn.addEventListener('click', () => setSubpanel(btn.dataset.sub));
+    });
+
+    function restoreSubpanel() {
+      let key = 'progress';
+      try {
+        const saved = localStorage.getItem(SUB_KEY);
+        if (saved && document.getElementById('sub-' + saved)) key = saved;
+      } catch (_) {}
+      setSubpanel(key, false);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  EINSTELLUNGEN als eigenes Sheet (Header-Zahnrad, auf allen Tabs)
+    // ═══════════════════════════════════════════════════════════════════
+    function setOpen() {
+      const s = document.getElementById('setSheet');
+      const b = document.getElementById('setBackdrop');
+      if (!s || !b) return;
+      initIcalSettings();
+      const wg = document.getElementById('weekGoal2');
+      if (wg) wg.value = String(getWeekGoal());
+      b.classList.add('open');
+      s.classList.add('open');
+      if (history.state?.set !== true) history.pushState({ set: true }, '');
+    }
+
+    function setClose() {
+      const s = document.getElementById('setSheet');
+      const b = document.getElementById('setBackdrop');
+      if (!s || !b || !s.classList.contains('open')) return;
+      b.classList.remove('open');
+      s.classList.remove('open');
+    }
+    window.setOpen = setOpen;
+    window.setClose = setClose;
+
+    document.getElementById('settingsBtn')?.addEventListener('click', setOpen);
+    document.getElementById('setClose')?.addEventListener('click', setClose);
+    document.getElementById('setBackdrop')?.addEventListener('click', setClose);
+
+    // Wochenziel aus dem Einstellungs-Sheet
+    window.saveWeekGoalFromSettings = function () {
+      const el = document.getElementById('weekGoal2');
+      if (!el) return;
+      const v = Number(el.value);
+      if (!v || v < 10) { alert('Bitte ein Ziel ab 10 € eingeben.'); return; }
+      try { localStorage.setItem(GOAL_KEY, String(v)); } catch (_) {}
+      showToast('Wochenziel gespeichert: ' + eur(v));
+      const mirror = document.getElementById('weekGoal');
+      if (mirror) mirror.value = String(v);
+      renderProgress();
+    };
+
+    // Accordion-Verhalten (nur noch Kalender-Tab — die Analyse hat ein Untermenü)
     document.querySelectorAll('.acc-head').forEach(head => {
       head.addEventListener('click', () => {
         const acc = head.closest('.acc');
@@ -2780,6 +3069,7 @@
     // ── Init ──
     initTheme();
     restoreState();
+    restoreSubpanel();
     activateTab(state.activeTab);
     form.date.value = todayStr();
     loadData();
