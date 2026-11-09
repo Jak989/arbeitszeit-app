@@ -620,6 +620,212 @@
     .si-chip.minus { color: var(--accent-3); background: rgba(255,159,10,.1); border-color: rgba(255,159,10,.3); }
     .si-chip.danger { color: var(--danger); background: rgba(255,59,48,.09); border-color: rgba(255,59,48,.28); }
 
+    /* ── Drill-Down: alles Antippbare ────────────────────────────────────
+       Ziel: sichtbar, dass es weitergeht — ohne laut zu schreien.
+       Mittel: dezenter Chevron, leichte Hover-/Active-Rückmeldung,
+       Fokus-Ring nur bei Tastaturbedienung. Kein Unterstreichen,
+       keine Rahmen um jeden Wert (macht das Dashboard unruhig). */
+    .is-tap {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      transition: background .16s ease, border-color .16s ease, transform .16s var(--spring-out);
+    }
+    .is-tap:active { transform: scale(.975); }
+    .is-tap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* Kacheln mit Chevron: der Pfeil sitzt rechts oben, klein und gedämpft */
+    .is-tap.has-chev::after {
+      content: '›';
+      position: absolute;
+      top: 4px;
+      right: 7px;
+      font-size: 14px;
+      line-height: 1;
+      color: var(--muted);
+      opacity: .45;
+      transition: opacity .16s ease, transform .16s ease;
+    }
+    .is-tap.has-chev:hover::after { opacity: .85; transform: translateX(1px); }
+
+    .si-fig-link {
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      position: relative;
+      transition: background .16s ease, border-color .16s ease, transform .15s var(--spring-out);
+    }
+    .si-fig-link::after {
+      content: '›';
+      position: absolute;
+      top: 3px;
+      right: 6px;
+      font-size: 13px;
+      line-height: 1;
+      color: var(--muted);
+      opacity: .4;
+    }
+    .si-fig-link:active { transform: scale(.97); }
+    .si-fig-link:hover { border-color: var(--accent); }
+    .si-fig-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    button.si-chip {
+      cursor: pointer;
+      font: inherit;
+      font-size: 11px;
+      font-weight: 600;
+      -webkit-tap-highlight-color: transparent;
+      transition: transform .14s var(--spring-out), filter .14s ease;
+    }
+    button.si-chip:active { transform: scale(.95); }
+    button.si-chip::after { content: ' ›'; opacity: .6; }
+
+    /* ── Drill-Down-Sheet ───────────────────────────────────────────────
+       Ein Layer für alle Details: schiebt von unten rein, schließt per
+       Backdrop-Tap, X oder Zurück-Geste. Inhalt wird dynamisch gefüllt. */
+    .dd-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.5);
+      backdrop-filter: blur(3px);
+      -webkit-backdrop-filter: blur(3px);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity .26s ease;
+      z-index: 9000;
+    }
+    .dd-backdrop.open { opacity: 1; pointer-events: auto; }
+
+    .dd-sheet {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      max-height: 86vh;
+      display: flex;
+      flex-direction: column;
+      background: var(--card-solid, var(--card));
+      border-top-left-radius: 20px;
+      border-top-right-radius: 20px;
+      border-top: 1px solid var(--line);
+      box-shadow: 0 -8px 40px rgba(0,0,0,.4);
+      transform: translateY(101%);
+      transition: transform .3s var(--spring-out, cubic-bezier(.2,.9,.3,1));
+      z-index: 9001;
+      padding-bottom: env(safe-area-inset-bottom, 0);
+    }
+    .dd-sheet.open { transform: translateY(0); }
+
+    .dd-grab {
+      width: 38px;
+      height: 4px;
+      border-radius: 999px;
+      background: var(--line-2, rgba(127,127,127,.35));
+      margin: 9px auto 4px;
+      flex-shrink: 0;
+    }
+    .dd-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 6px 18px 11px;
+      border-bottom: 1px solid var(--line);
+      flex-shrink: 0;
+    }
+    .dd-title {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      line-height: 1.2;
+    }
+    .dd-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 3px;
+      line-height: 1.3;
+    }
+    .dd-close {
+      flex-shrink: 0;
+      width: 30px;
+      height: 30px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: var(--card-2, rgba(127,127,127,.08));
+      color: var(--muted);
+      font-size: 17px;
+      line-height: 1;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dd-close:active { transform: scale(.92); }
+    .dd-body {
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 14px 18px 22px;
+      overscroll-behavior: contain;
+    }
+
+    /* Zeilen im Sheet: Datum links, Werte rechts — antippbar zum Bearbeiten */
+    .dd-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 11px 2px;
+      border-bottom: 1px solid var(--line);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .dd-row:last-child { border-bottom: none; }
+    .dd-row:active { background: var(--hover, rgba(127,127,127,.08)); }
+    .dd-row-main { flex: 1; min-width: 0; }
+    .dd-row-day { font-size: 14px; font-weight: 700; }
+    .dd-row-meta { font-size: 11.5px; color: var(--muted); margin-top: 2px; }
+    .dd-row-val {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
+    }
+    .dd-row-h { font-size: 14px; font-weight: 700; }
+    .dd-row-t { font-size: 11.5px; color: var(--muted); margin-top: 1px; }
+
+    .dd-empty {
+      text-align: center;
+      padding: 34px 12px;
+      color: var(--muted);
+    }
+    .dd-empty-ico { font-size: 30px; margin-bottom: 8px; opacity: .75; }
+    .dd-empty-title { font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 4px; }
+    .dd-empty-sub { font-size: 12px; line-height: 1.45; }
+    .dd-empty-cta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 14px;
+    }
+    .dd-empty-cta .si-chip { cursor: pointer; }
+    .ach-count {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-left: 6px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .dd-sum {
+      display: flex;
+      gap: 10px;
+      padding: 11px 13px;
+      margin-bottom: 12px;
+      border-radius: 12px;
+      background: var(--card-2, rgba(127,127,127,.07));
+      border: 1px solid var(--line);
+      font-size: 12px;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+    .dd-sum strong { font-variant-numeric: tabular-nums; }
+
     .si-note {
       margin-top: 12px;
       font-size: 11.5px;
@@ -678,6 +884,152 @@
       margin-bottom: 10px;
     }
     .cap-grid-equal { grid-template-columns: 1fr 1fr; }
+
+    /* Felder UNTEREINANDER — auf Wunsch: Datum → Stunden → Trinkgeld → Notiz.
+       Eine Spalte, volle Breite, gleichmäßiger Rhythmus (8er-Raster). */
+    .cap-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .cap-stack > div { display: flex; flex-direction: column; }
+    .cap-stack label { margin-bottom: 4px; }
+    .cap-stack input { width: 100%; }
+
+    /* ── Fortschritt / Erfolge ── */
+    .goal-row {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .goal-ring-wrap {
+      position: relative;
+      width: 130px;
+      height: 130px;
+      flex-shrink: 0;
+    }
+    .goal-ring { width: 100%; height: 100%; transform: rotate(-90deg); }
+    .ring-bg {
+      fill: none;
+      stroke: var(--line-2, rgba(127,127,127,.2));
+      stroke-width: 10;
+    }
+    .ring-fg {
+      fill: none;
+      stroke: #30d158;
+      stroke-width: 10;
+      stroke-linecap: round;
+      stroke-dasharray: 327;
+      stroke-dashoffset: 327;
+      transition: stroke-dashoffset .9s var(--spring-out, cubic-bezier(.2,.9,.3,1));
+    }
+    .goal-ring-center {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+    }
+    .goal-ring-val {
+      font-size: 19px;
+      font-weight: 800;
+      letter-spacing: -.02em;
+      line-height: 1.1;
+    }
+    .goal-ring-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .goal-side { flex: 1; min-width: 140px; display: flex; flex-direction: column; gap: 10px; }
+    .goal-streak {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 15px;
+      background: rgba(255,159,10,.12);
+      border: 1px solid rgba(255,159,10,.3);
+    }
+    .goal-streak.cold {
+      background: rgba(127,127,127,.08);
+      border-color: var(--line);
+    }
+    .streak-flame { font-size: 26px; line-height: 1; }
+    .goal-streak.cold .streak-flame { filter: grayscale(1); opacity: .5; }
+    .streak-num { font-size: 21px; font-weight: 800; line-height: 1; }
+    .streak-label { font-size: 11px; color: var(--muted); margin-top: 2px; }
+    .goal-meta {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+    .goal-set { margin: 4px 0 18px; }
+    .goal-set-row { display: flex; gap: 8px; margin-top: 6px; }
+    .goal-set-row input { max-width: 130px; }
+    .ach-head {
+      font-size: 14px;
+      font-weight: 700;
+      margin: 0 0 10px;
+      letter-spacing: -.01em;
+    }
+    .badges {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
+      gap: 9px;
+    }
+    .badge {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 5px;
+      padding: 12px 6px;
+      border-radius: 14px;
+      border: 1px solid var(--line);
+      background: rgba(127,127,127,.05);
+      text-align: center;
+      transition: transform .18s var(--spring-out, cubic-bezier(.2,.9,.3,1));
+    }
+    .badge.earned {
+      background: linear-gradient(180deg, rgba(48,209,88,.16), rgba(48,209,88,.06));
+      border-color: rgba(48,209,88,.42);
+    }
+    .badge-ico { font-size: 22px; line-height: 1; }
+    .badge.locked .badge-ico { filter: grayscale(1); opacity: .35; }
+    .badge-name {
+      font-size: 10.5px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    .badge.locked .badge-name { color: var(--muted); font-weight: 500; }
+    .badge-hint { font-size: 9px; color: var(--muted); line-height: 1.2; }
+
+    /* ── Anklickbare Tabellenzeile (Monatsübersicht) ── */
+    .month-row { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    .month-row:active td { background: var(--hover, rgba(127,127,127,.09)); }
+    .month-row:hover td { background: var(--hover, rgba(127,127,127,.05)); }
+    .month-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+    /* ── Text-Bausteine im Drill-Down-Sheet ── */
+    .dd-h3 {
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 18px 0 4px;
+    }
+    .dd-p {
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: var(--text);
+      margin: 10px 0 0;
+    }
     .cap-actions {
       display: flex;
       flex-direction: column;

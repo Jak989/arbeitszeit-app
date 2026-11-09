@@ -61,7 +61,7 @@
     <section id="capture" class="tab-panel active">
       <div class="card">
         <h2>Schicht erfassen</h2>
-        <div class="cap-grid">
+        <div class="cap-stack">
           <div>
             <label for="date">Datum</label>
             <input id="date" type="date" />
@@ -70,8 +70,6 @@
             <label for="hours">Stunden</label>
             <input id="hours" type="text" inputmode="decimal" placeholder="5,98" />
           </div>
-        </div>
-        <div class="cap-grid cap-grid-equal">
           <div>
             <label for="tipsInput">Trinkgeld (€)</label>
             <input id="tipsInput" type="text" inputmode="decimal" placeholder="9,70" />
@@ -105,6 +103,49 @@
       </div>
 
       <div id="overviewContent" style="display:none">
+
+        <!-- ═══ ERFOLGE & FORTSCHRITT (zurückgeholt) ═══ -->
+        <div class="acc" data-acc id="progressAcc">
+          <button class="acc-head" type="button">
+            <span class="acc-title"><span class="acc-ico">🏆</span>Fortschritt & Erfolge</span>
+            <span class="acc-chev">›</span>
+          </button>
+          <div class="acc-body">
+            <div class="goal-row">
+              <div class="goal-ring-wrap">
+                <svg class="goal-ring" viewBox="0 0 120 120">
+                  <circle class="ring-bg" cx="60" cy="60" r="52" />
+                  <circle class="ring-fg" id="goalRingFg" cx="60" cy="60" r="52" />
+                </svg>
+                <div class="goal-ring-center">
+                  <div class="goal-ring-val" id="goalRingVal">0 €</div>
+                  <div class="goal-ring-sub" id="goalRingSub">von 100 €</div>
+                </div>
+              </div>
+              <div class="goal-side">
+                <div class="goal-streak" id="streakBox">
+                  <span class="streak-flame" id="streakFlame">🔥</span>
+                  <div>
+                    <div class="streak-num" id="streakNum">0</div>
+                    <div class="streak-label">Tage in Folge</div>
+                  </div>
+                </div>
+                <div class="goal-meta" id="goalMeta"></div>
+              </div>
+            </div>
+
+            <div class="goal-set">
+              <label for="weekGoal">Wochenziel (Trinkgeld)</label>
+              <div class="goal-set-row">
+                <input id="weekGoal" type="number" inputmode="numeric" min="10" step="10" placeholder="100" />
+                <button class="btn-secondary" type="button" onclick="saveWeekGoal()">Speichern</button>
+              </div>
+            </div>
+
+            <h3 class="ach-head">Erfolge <span class="ach-count" id="badgeCount"></span></h3>
+            <div class="badges" id="badgeGrid"></div>
+          </div>
+        </div>
 
         <!-- 0 · Soll/Ist: geplant vs. gearbeitet (Kern des Analyse-Tabs) -->
         <div class="card sollist" id="sollIstCard">
@@ -350,41 +391,45 @@
     <!-- ═══ TAB: Datenbank ═══ -->
     <section id="database" class="tab-panel">
 
-      <div class="card" id="calLinkCard">
-        <h2>Kalender-Link</h2>
-        <label for="icalUrl">iCal-/ICS-Link</label>
-        <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://… oder webcal://…" />
-        <div class="cap-grid-equal cap-grid" style="margin-top:10px;">
-          <div>
-            <label for="icalMinShift">Min. Stunden pro Schicht</label>
-            <input id="icalMinShift" type="text" inputmode="decimal" placeholder="4" />
-          </div>
-        </div>
-        <div class="button-row">
-          <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern</button>
-          <button class="btn-secondary" type="button" onclick="diagnoseIcal()">Prüfen</button>
-        </div>
-        <div id="icalStatus" class="status"></div>
-        <details class="hint-details">
-          <summary>Wie komme ich an den Link?</summary>
-          <p><strong>Tanda:</strong> App → Profilfoto → Einstellungen → „Calendar Link" → Kopieren.<br>
-          <strong>Google Kalender:</strong> Einstellungen → Kalender → „Geheime Adresse im iCal-Format".<br>
-          Der Link ist nur lesbar und bleibt geheim.</p>
-          <div class="button-row">
-            <button class="btn-secondary" type="button" onclick="saveIcalMinShift()">Mindestdauer übernehmen</button>
-            <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Link entfernen</button>
-          </div>
-        </details>
-      </div>
+      <!-- ═══ EINSTELLUNGEN (aufklappbar) ═══ -->
+      <div class="acc" id="settingsAcc">
+        <button class="acc-head" type="button">
+          <span class="acc-title"><span class="acc-ico">⚙️</span>Einstellungen</span>
+          <span class="acc-chev">›</span>
+        </button>
+        <div class="acc-body">
 
-      <div class="card">
-        <h2>Sicherung</h2>
-        <div class="button-row">
-          <button onclick="exportCSV()" class="btn-secondary" type="button">CSV exportieren</button>
-          <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">CSV importieren</button>
-          <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
+          <div class="card" id="calLinkCard">
+            <h2>Kalender-Link</h2>
+            <label for="icalUrl">iCal-/ICS-Link</label>
+            <input id="icalUrl" type="text" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://… oder webcal://…" />
+            <div class="button-row">
+              <button class="btn-primary" type="button" onclick="saveIcalSettings()">Speichern</button>
+              <button class="btn-secondary" type="button" onclick="diagnoseIcal()">Prüfen</button>
+            </div>
+            <div id="icalStatus" class="status"></div>
+            <details class="hint-details">
+              <summary>Wie komme ich an den Link?</summary>
+              <p><strong>Tanda:</strong> App → Profilfoto → Einstellungen → „Calendar Link" → Kopieren.<br>
+              <strong>Google Kalender:</strong> Einstellungen → Kalender → „Geheime Adresse im iCal-Format".<br>
+              Der Link ist nur lesbar und bleibt geheim.</p>
+              <div class="button-row">
+                <button class="btn-secondary" type="button" onclick="clearIcalSettings()">Link entfernen</button>
+              </div>
+            </details>
+          </div>
+
+          <div class="card">
+            <h2>Sicherung</h2>
+            <div class="button-row">
+              <button onclick="exportCSV()" class="btn-secondary" type="button">CSV exportieren</button>
+              <button onclick="document.getElementById('csvFileInput').click()" class="btn-secondary" type="button">CSV importieren</button>
+              <input type="file" id="csvFileInput" accept=".csv,text/csv" style="display:none" onchange="importCSV(event)" />
+            </div>
+            <div id="csvImportStatus" class="status"></div>
+          </div>
+
         </div>
-        <div id="csvImportStatus" class="status"></div>
       </div>
 
       <div class="card">
@@ -410,5 +455,19 @@
     <!-- Hidden backdrop for keyboard accessory visibility detection -->
     <div id="keyboardDetect" style="position:fixed;bottom:-9999px;left:0;width:1px;height:1px;pointer-events:none;"></div>
 
+  </div>
+
+  <!-- ═══ Drill-Down-Sheet: ein Layer für alle Detail-Ansichten ═══ -->
+  <div class="dd-backdrop" id="ddBackdrop"></div>
+  <div class="dd-sheet" id="ddSheet" role="dialog" aria-modal="true" aria-labelledby="ddTitle">
+    <div class="dd-grab"></div>
+    <div class="dd-head">
+      <div style="min-width:0;">
+        <div class="dd-title" id="ddTitle">Details</div>
+        <div class="dd-sub" id="ddSub"></div>
+      </div>
+      <button class="dd-close" type="button" id="ddClose" aria-label="Schließen">✕</button>
+    </div>
+    <div class="dd-body" id="ddBody"></div>
   </div>
 

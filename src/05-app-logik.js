@@ -23,41 +23,58 @@
     const CapFs = () => window.Capacitor?.Plugins?.Filesystem;
     const CapShare = () => window.Capacitor?.Plugins?.Share;
 
-    // Speichert eine Datei. Auf Android 16 (targetSdk 36) ist der direkte Schreibzugriff
-    // auf /Downloads durch Scoped Storage gesperrt. Darum: Datei in den App-Ordner schreiben
-    // und dann den Android-"Speichern unter"-Dialog anbieten (SAF) — dort wählt der Nutzer
-    // den Zielordner, z. B. Downloads.
+    // Speichert eine Datei. WICHTIG: Der Nutzer will die Datei SOFORT in „Downloads"
+    // haben — kein Teilen-Dialog, kein „Speichern unter".
+    //
+    // Android 10+ (Scoped Storage): Direktes Schreiben nach /storage/emulated/0/Download
+    // ist für Apps gesperrt. Der vorgesehene Weg ist der MediaStore. Capacitor Filesystem
+    // bietet dafür `Directory.ExternalStorage` — seit Capacitor 5 wird das auf Android 10+
+    // intern über den MediaStore aufgelöst und landet in „Downloads".
+    // Fallback-Kette: ExternalStorage → Documents → (nur wenn alles scheitert) Teilen.
     async function saveTextFile(filename, text, mime) {
       if (isNative && CapFs()) {
-        try {
-          // 1. In den App-eigenen Dokumente-Ordner schreiben (immer erlaubt)
-          const res = await CapFs().writeFile({
-            path: filename,
-            data: text,
-            directory: 'CACHE',
-            encoding: 'utf8',
-          });
+        const Fs = CapFs();
 
-          // 2. Android-Dialog "Speichern unter" öffnen, damit der Nutzer den Ordner wählt
-          if (CapShare() && res.uri) {
-            await CapShare().share({
-              title: filename,
-              files: [res.uri],
-              dialogTitle: 'Speichern unter …',
-            });
-            return true;
-          }
-          showToast('Gespeichert: ' + filename, 3200);
+        // 1. Bevorzugt: direkt nach Downloads (MediaStore, kein Dialog)
+        try {
+          await Fs.writeFile({
+            path: 'Download/' + filename,
+            data: text,
+            directory: 'EXTERNAL_STORAGE',
+            encoding: 'utf8',
+            recursive: true,
+          });
+          showToast('In Downloads gespeichert 📥', 3000);
           return true;
-        } catch (err) {
-          const msg = (err && err.message) || String(err);
-          // Nutzer hat den Dialog abgebrochen — kein Fehler
-          if (/cancel/i.test(msg)) return false;
-          alert('Speichern fehlgeschlagen: ' + msg);
-          return false;
+        } catch (e1) {
+          // 2. Fallback: App-eigener Dokumente-Ordner (immer erlaubt, kein Dialog)
+          try {
+            await Fs.writeFile({
+              path: filename,
+              data: text,
+              directory: 'DOCUMENTS',
+              encoding: 'utf8',
+              recursive: true,
+            });
+            showToast('Gespeichert: ' + filename, 3200);
+            return true;
+          } catch (e2) {
+            // 3. Letzter Ausweg: Teilen-Dialog (nur wenn 1+2 scheitern)
+            try {
+              const res = await Fs.writeFile({
+                path: filename, data: text, directory: 'CACHE', encoding: 'utf8',
+              });
+              if (CapShare() && res.uri) {
+                await CapShare().share({ title: filename, files: [res.uri] });
+                return true;
+              }
+            } catch (e3) {}
+            alert('Speichern fehlgeschlagen: ' + ((e2 && e2.message) || String(e2)));
+            return false;
+          }
         }
       }
-      // Browser-Fallback
+      // Browser-Fallback: normaler Download
       const blob = new Blob([text], { type: mime || 'text/plain;charset=utf-8' });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
@@ -268,9 +285,12 @@
     document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
 
     // ── State Persistence ──
+    // ACHTUNG: activeTab wird NICHT mehr gemerkt. Die App startet immer im
+    // Tab „Eintragen" (Wunsch des Nutzers: morgens eintragen, nicht erst
+    // dorthin navigieren). trendMode/trendWeekKey/trendMonth bleiben erhalten.
     function persistState() {
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify({
-        activeTab: state.activeTab, trendMode: state.trendMode,
+        trendMode: state.trendMode,
         trendWeekKey: state.trendWeekKey, trendMonth: state.trendMonth
       })); } catch (_) {}
     }
@@ -281,9 +301,10 @@
           if (saved.trendMode) state.trendMode = saved.trendMode;
           if (saved.trendWeekKey) state.trendWeekKey = saved.trendWeekKey;
           if (saved.trendMonth) state.trendMonth = saved.trendMonth;
-          if (saved.activeTab) state.activeTab = saved.activeTab;
         }
       } catch (_) {}
+      // Immer im Erfassungs-Tab starten
+      state.activeTab = 'capture';
     }
 
     const tabButtons = [...document.querySelectorAll('.tab-btn')];
@@ -504,48 +525,64 @@
         box.innerHTML = `<div class="si-empty">
           <div class="si-empty-ico">🎯</div>
           <div class="si-empty-title">Noch kein Soll vorhanden</div>
-          <div class="si-empty-sub">Sobald dein Kalender-Link hinterlegt ist (<strong>Datenbank → Kalender-Link</strong>), steht hier geplant vs. gearbeitet.</div>
+          <div class="si-empty-sub">Sobald dein Kalender-Link hinterlegt ist (<strong>Einstellungen</strong>), steht hier geplant vs. gearbeitet.</div>
         </div>`;
         return;
       }
 
       const pct = d.sollHours ? (d.istHours / d.sollHours) * 100 : 0;
-      const saldo = d.saldo;
-      const tol = siTolerance(d.sollHours);
-      const imPlan = Math.abs(saldo) <= tol;
+
+      // ── SALDO-BEZUG: bis heute, nicht Gesamtzeitraum ────────────────────────
+      // Ein laufender Zeitraum darf nicht gegen den vollen Plan gerechnet werden:
+      // am Dienstag sind die restlichen Schichten noch nicht gearbeitet — das ist
+      // kein Minus, sondern Zukunft. Deshalb:
+      //   · laufender Zeitraum  → Soll = nur Schichten bis heute
+      //   · zurückliegend       → Soll = ganzer Zeitraum (alles ist fällig)
+      //   · zukünftig           → Soll = 0, Saldo „—" (noch nichts fällig)
+      const today = localIso(new Date());
+      const isRunning = d.from <= today && d.to >= today;
+      const isPast = d.to < today;
+      const sollBasis = isPast ? d.sollHours : (isRunning ? d.sollBisHeute : 0);
+      const saldo = isRunning || isPast ? d.istHours - sollBasis : null;
+      const tol = siTolerance(sollBasis);
+      const imPlan = saldo !== null && Math.abs(saldo) <= tol;
 
       // Farbe: im Plan = neutral. Sonst Akzent (grün/grau-orange).
       // Rot NUR, wenn eine echte Grenze gerissen wird — nicht bei „weniger gearbeitet".
       const verdienst = d.istHours * HOURLY_RATE;
       const ueberMinijob = siState.period === 'month' && verdienst > MINIJOB_LIMIT_EUR;
-      const tone = ueberMinijob ? 'over-limit'
+      const tone = saldo === null ? 'neutral'
+        : ueberMinijob ? 'over-limit'
         : imPlan ? 'neutral'
         : (saldo > 0 ? 'plus' : 'minus');
 
       // Immer Wort + Pfeil + Zahl — „+3,5 h" allein ist mehrdeutig
-      const saldoTxt = imPlan ? 'im Plan'
+      const saldoTxt = saldo === null ? '—'
+        : imPlan ? 'im Plan'
         : (saldo > 0 ? '▲ ' : '▼ ') + hrs(Math.abs(saldo));
-      const saldoHint = ueberMinijob
+      const saldoHint = saldo === null
+        ? 'noch nichts fällig'
+        : ueberMinijob
         ? `über Minijob-Grenze (${eur(MINIJOB_LIMIT_EUR)})`
         : imPlan ? `Toleranz ±${hrs(tol)}`
-        : (saldo > 0 ? 'mehr als geplant' : 'weniger als geplant');
+        : (saldo > 0 ? 'mehr als geplant' : 'weniger als fällig');
 
-      // Große Zeile: Soll | Ist | Saldo
+      // Große Zeile: Soll | Ist | Saldo — antippbar (führt zur Schichtliste)
       let html = `<div class="si-figures">
-        <div class="si-fig">
+        <div class="si-fig si-fig-link" role="button" tabindex="0" data-goto="planned">
           <div class="si-fig-label">Geplant</div>
           <div class="si-fig-value">${d.sollHoursGesamt > 0 ? hrs(d.sollHoursGesamt) : '—'}</div>
           <div class="si-fig-hint">${d.sollHoursGesamt > 0
             ? (d.planDraft.length ? `davon ${hrs(d.draftHours)} unbestätigt` : `${d.offen.length} offen`)
             : 'kein Plan'}</div>
         </div>
-        <div class="si-fig">
+        <div class="si-fig si-fig-link" role="button" tabindex="0" data-goto="worked">
           <div class="si-fig-label">Gearbeitet</div>
           <div class="si-fig-value">${hrs(d.istHours)}</div>
           <div class="si-fig-hint">${eur(verdienst)}</div>
         </div>
-        <div class="si-fig si-fig-saldo">
-          <div class="si-fig-label">Saldo</div>
+        <div class="si-fig si-fig-saldo si-fig-link" role="button" tabindex="0" data-goto="saldo">
+          <div class="si-fig-label">Saldo${isRunning ? ' <span class="si-muted">bis heute</span>' : ''}</div>
           <div class="si-fig-value ${tone}">${saldoTxt}</div>
           <div class="si-fig-hint">${saldoHint}</div>
         </div>
@@ -566,17 +603,16 @@
         ${siBar(pct, tone)}
         <div class="si-progress-meta">
           <span><strong>${pct.toFixed(0)} %</strong> des Plans${siState.period !== 'year' ? ' · <span class="si-muted">läuft</span>' : ''}</span>
-          <span>${hrs(d.istHours)} von ${hrs(d.sollHours)}</span>
+          <span>${hrs(d.istHours)} von ${hrs(d.sollHoursGesamt)}</span>
         </div>
       </div>`;
 
-      // Laufender Zeitraum: Fortschritt bis heute statt Endstand
+      // Laufender Zeitraum: Fortschritt bis heute statt Endstand.
+      // Der Saldo oben rechnet bereits bis heute — hier steht die Erklärung,
+      // damit niemand denkt, der Plan sei „schon durch".
       if (d.isFutureOnly) {
         html += `<div class="si-note">Der Zeitraum liegt noch vor dir — geplant sind ${hrs(d.sollHours)}.</div>`;
-      } else if (d.sollBisHeute > 0 && Math.abs(d.sollBisHeute - d.sollHours) > 0.05) {
-        // Achtung: dieser Balken nutzt DIESELBE Skala wie oben (Anteil am Gesamtplan),
-        // damit man die Längen vergleichen kann. Zusätzlich markieren wir, wo das
-        // „bis heute fällige Soll" liegt — alles links davon ist erledigt.
+      } else if (isRunning && d.sollBisHeute > 0 && Math.abs(d.sollBisHeute - d.sollHours) > 0.05) {
         const pctHeuteVomPlan = d.sollHours ? (d.sollBisHeute / d.sollHours) * 100 : 0;
         const saldoHeute = d.istHours - d.sollBisHeute;
         const tolH = siTolerance(d.sollBisHeute);
@@ -586,7 +622,7 @@
           : (saldoHeute > 0 ? '▲ ' : '▼ ') + hrs(Math.abs(saldoHeute));
         html += `<div class="si-until">
           <div class="si-until-head">
-            <span>Stand heute <span class="si-muted">(fällig bis ${dateFmt(d.to < localIso(new Date()) ? d.to : localIso(new Date())).split(' ').slice(1).join(' ')})</span></span>
+            <span>Stand heute <span class="si-muted">(fällig bis ${dateFmt(today).split(' ').slice(1).join(' ')})</span></span>
             <strong class="${toneH}">${saldoHeuteTxt}</strong>
           </div>
           <div class="si-bar si-bar-marked">
@@ -600,14 +636,406 @@
         </div>`;
       }
 
-      // Zusatzschichten (nicht im Plan) und offene Schichten
+      // Zusatzschichten (nicht im Plan) und offene Schichten — antippbar
       const extras = [];
-      if (d.zusatz.length) extras.push(`<span class="si-chip plus">+${d.zusatz.length} ohne Plan · ${hrs(d.zusatzHours)}</span>`);
-      if (d.offen.length) extras.push(`<span class="si-chip minus">${d.offen.length} offen · ${hrs(d.offenHours)}</span>`);
+      if (d.zusatz.length) extras.push(`<button class="si-chip plus" type="button" data-goto="extra">+${d.zusatz.length} ohne Plan · ${hrs(d.zusatzHours)}</button>`);
+      if (d.offen.length) extras.push(`<button class="si-chip minus" type="button" data-goto="open">${d.offen.length} offen · ${hrs(d.offenHours)}</button>`);
       if (extras.length) html += `<div class="si-chips">${extras.join('')}</div>`;
 
       box.innerHTML = html;
     }
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  DRILL-DOWN
+    //  Prinzip: jede Zahl im Analyse-Tab ist antippbar und öffnet die
+    //  Schichten, aus denen sie entstanden ist. Ein Sheet, viele Inhalte.
+    //  Das ersetzt „Zahl ohne Kontext" durch „Zahl → Beleg".
+    // ═══════════════════════════════════════════════════════════════════
+    const ddState = { open: false, lastFocus: null };
+
+    function ddOpen(title, sub, bodyHtml, kind) {
+      const sheet = document.getElementById('ddSheet');
+      const back = document.getElementById('ddBackdrop');
+      if (!sheet || !back) return;
+      ddState.lastFocus = document.activeElement;
+      document.getElementById('ddTitle').textContent = title;
+      document.getElementById('ddSub').textContent = sub || '';
+      const bodyEl = document.getElementById('ddBody');
+      bodyEl.innerHTML = bodyHtml;
+      if (kind) bodyEl.dataset.kind = kind; else delete bodyEl.dataset.kind;
+      back.classList.add('open');
+      sheet.classList.add('open');
+      ddState.open = true;
+      document.getElementById('ddBody').scrollTop = 0;
+      if (history.state?.dd !== true) history.pushState({ dd: true }, '');
+    }
+
+    function ddClose() {
+      const sheet = document.getElementById('ddSheet');
+      const back = document.getElementById('ddBackdrop');
+      if (!sheet || !back || !ddState.open) return;
+      back.classList.remove('open');
+      sheet.classList.remove('open');
+      ddState.open = false;
+      if (ddState.lastFocus && ddState.lastFocus.focus) {
+        try { ddState.lastFocus.focus({ preventScroll: true }); } catch (_) {}
+      }
+    }
+    window.ddClose = ddClose;
+
+    document.getElementById('ddClose')?.addEventListener('click', ddClose);
+    document.getElementById('ddBackdrop')?.addEventListener('click', ddClose);
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') ddClose(); });
+    // Android-Zurück / Browser-Zurück schließt das Sheet statt die Ansicht zu verlassen
+    window.addEventListener('popstate', () => { if (ddState.open) ddClose(); });
+    // Wisch-Geste nach unten schließt
+    (function ddSwipe() {
+      const sheet = document.getElementById('ddSheet');
+      if (!sheet) return;
+      let y0 = null, dy = 0;
+      const body = document.getElementById('ddBody');
+      sheet.addEventListener('touchstart', e => {
+        if (body && body.scrollTop > 4) return;
+        y0 = e.touches[0].clientY; dy = 0;
+        sheet.style.transition = 'none';
+      }, { passive: true });
+      sheet.addEventListener('touchmove', e => {
+        if (y0 === null) return;
+        dy = Math.max(0, e.touches[0].clientY - y0);
+        if (dy > 0) sheet.style.transform = `translateY(${dy}px)`;
+      }, { passive: true });
+      sheet.addEventListener('touchend', () => {
+        if (y0 === null) return;
+        sheet.style.transition = '';
+        sheet.style.transform = '';
+        if (dy > 90) ddClose();
+        y0 = null; dy = 0;
+      });
+    })();
+
+    // ── Bausteine für die Sheet-Inhalte ──
+    // Eine Zeile pro Schicht. Tippen öffnet den Bearbeiten-Formular (Sheet zu).
+    function ddShiftRow(r, opts = {}) {
+      const o = opts;
+      return `<div class="dd-row" role="button" tabindex="0" data-edit="${r.date}">
+        <div class="dd-row-main">
+          <div class="dd-row-day">${weekdayName(r.date)}${o.day ? ', ' + dateFmt(r.date).split(' ').slice(1).join(' ') : ''}</div>
+          <div class="dd-row-meta">${r.week ? r.week.label : ''}${r.note ? ' · ' + r.note : ''}</div>
+        </div>
+        <div class="dd-row-val">
+          <div class="dd-row-h">${hrs(r.actualHoursManual)}</div>
+          <div class="dd-row-t">${eur(r.tips)}</div>
+        </div>
+      </div>`;
+    }
+
+    function ddEmpty(ico, title, sub) {
+      return `<div class="dd-empty">
+        <div class="dd-empty-ico">${ico}</div>
+        <div class="dd-empty-title">${title}</div>
+        <div class="dd-empty-sub">${sub}</div>
+      </div>`;
+    }
+
+    // Cross-Sell statt Leere: gibt es in einem ANDEREN Zeitraum Daten?
+    // NN/g Empty States: Systemstatus erklären + direkten Pfad anbieten.
+    function ddEmptyWithHint(ico, title, sub, period, rowCount) {
+      const alts = [['week', 'Woche'], ['month', 'Monat'], ['year', 'Jahr']]
+        .filter(([p]) => p !== period);
+      const counts = alts.map(([p, label]) => {
+        const r = siRange(p);
+        const all = state.rows || [];
+        const n = all.filter(x => x.date >= r.from && x.date <= r.to).length;
+        return { p, label, n };
+      }).filter(x => x.n > 0);
+      const hint = counts.length
+        ? `<div class="dd-empty-cta">${counts.map(c =>
+            `<button class="si-chip" type="button" data-switch-period="${c.p}">${c.label}: ${c.n}</button>`).join('')}</div>`
+        : '';
+      return `<div class="dd-empty">
+        <div class="dd-empty-ico">${ico}</div>
+        <div class="dd-empty-title">${title}</div>
+        <div class="dd-empty-sub">${sub}</div>
+        ${hint}
+      </div>`;
+    }
+
+    // Zeitraum im Sheet direkt umschalten, ohne es zu schließen
+    document.addEventListener('click', e => {
+      const sw = e.target.closest('[data-switch-period]');
+      if (!sw) return;
+      e.preventDefault();
+      siState.period = sw.dataset.switchPeriod;
+      renderSollIst();
+      // offenes Sheet mit dem neuen Zeitraum neu aufbauen
+      const reopen = { worked: ddWorked, planned: ddPlanned, saldo: ddSaldo, extra: ddExtra, open: ddOpenShifts };
+      const last = sw.closest('.dd-body')?.dataset.kind;
+      if (last && reopen[last]) reopen[last]();
+    });
+
+    function ddSum(items) {
+      return `<div class="dd-sum">${items.map(([k, v]) => `<span>${k} <strong>${v}</strong></span>`).join('')}</div>`;
+    }
+
+    function ddRowsOrEmpty(list, emptyIco, emptyTitle, emptySub) {
+      return list.length ? list.join('') : ddEmpty(emptyIco, emptyTitle, emptySub);
+    }
+
+    // Holt die Schichten des aktuell gewählten Soll/Ist-Zeitraums
+    function ddPeriodRows() {
+      const r = siRange(siState.period);
+      return state.rows.filter(x => x.date >= r.from && x.date <= r.to)
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
+    function ddPeriodLabel() {
+      const r = siRange(siState.period);
+      return r.label;
+    }
+
+    // ── Die einzelnen Drill-Down-Ziele ──
+    function ddWorked() {
+      const rows = ddPeriodRows();
+      const d = siCompute(siState.period);
+      const list = rows.slice().reverse().map(r => ddShiftRow(r, { day: true }));
+      ddOpen(
+        `Gearbeitet · ${hrs(d.istHours)}`,
+        `${rows.length} ${rows.length === 1 ? 'Schicht' : 'Schichten'} · ${ddPeriodLabel()}`,
+        ddSum([['Stunden', hrs(d.istHours)], ['Trinkgeld', eur(d.istTips)], ['Ø/Std', eur(d.istHours ? d.istTips / d.istHours : 0)]])
+        + (list.length ? list.join('') : ddEmptyWithHint('📋', 'Noch keine Schicht erfasst', 'Trag im Tab „Eintragen" eine Schicht ein — dann steht sie hier.', siState.period)),
+        'worked'
+      );
+    }
+
+    function ddPlanned() {
+      const d = siCompute(siState.period);
+      const evs = icalEvents.filter(e => icalIsShift(e) && e.start >= d.from && e.start <= d.to)
+        .sort((a, b) => a.start.localeCompare(b.start));
+      const rows = evs.map(e => {
+        const got = state.rows.find(x => x.date === e.start);
+        const dur = (icalDuration(e) || 0) / 60;
+        const draft = (e.status === 'TENTATIVE');
+        return `<div class="dd-row" role="button" tabindex="0" ${got ? `data-edit="${got.date}"` : `data-plan="${e.start}"`}>
+          <div class="dd-row-main">
+            <div class="dd-row-day">${weekdayName(e.start)}, ${dateFmt(e.start).split(' ').slice(1).join(' ')}${draft ? ' <span class="si-muted">(unbestätigt)</span>' : ''}</div>
+            <div class="dd-row-meta">${e.summary || 'Schicht'}${got ? ' · erfasst' : ' · offen'}</div>
+          </div>
+          <div class="dd-row-val">
+            <div class="dd-row-h">${hrs(dur)}</div>
+            <div class="dd-row-t">${got ? hrs(got.actualHoursManual) : '—'}</div>
+          </div>
+        </div>`;
+      });
+      ddOpen(
+        `Geplant · ${hrs(d.sollHoursGesamt)}`,
+        `${evs.length} ${evs.length === 1 ? 'Schicht' : 'Schichten'} im Kalender · ${ddPeriodLabel()}`,
+        ddSum([['Bestätigt', hrs(d.sollHours)], ['Unbestätigt', hrs(d.draftHours)], ['Offen', `${d.offen.length}`]])
+        + (rows.length ? rows.join('') : ddEmptyWithHint('🗓️', 'Keine Schichten im Plan', 'Der Kalender-Link ist gesetzt, aber in diesem Zeitraum steht nichts drin.', siState.period)),
+        'planned'
+      );
+    }
+
+    function ddSaldo() {
+      const d = siCompute(siState.period);
+      const today = localIso(new Date());
+      const isRunning = d.from <= today && d.to >= today;
+      const isPast = d.to < today;
+      const basis = isPast ? d.sollHours : (isRunning ? d.sollBisHeute : 0);
+      const saldo = d.istHours - basis;
+      const diff = Math.abs(saldo);
+      const tol = siTolerance(basis);
+      const verdict = Math.abs(saldo) <= tol
+        ? 'Du bist im Plan — die Abweichung liegt innerhalb der Toleranz.'
+        : saldo > 0
+        ? `Du hast ${hrs(diff)} mehr gearbeitet als fällig war.`
+        : `Dir fehlen ${hrs(diff)} bis zum heutigen Soll. Kein Grund zur Panik: die restlichen Schichten zählen erst, wenn sie dran sind.`;
+      const extras = [];
+      if (d.offen.length) {
+        extras.push(`<h3 class="dd-h3">Noch offen (${d.offen.length})</h3>`);
+        extras.push(...d.offen.sort((a, b) => a.start.localeCompare(b.start)).map(e =>
+          `<div class="dd-row"><div class="dd-row-main">
+            <div class="dd-row-day">${weekdayName(e.start)}, ${dateFmt(e.start).split(' ').slice(1).join(' ')}</div>
+            <div class="dd-row-meta">${e.summary || 'Schicht'}</div>
+          </div><div class="dd-row-val"><div class="dd-row-h">${hrs((icalDuration(e) || 0) / 60)}</div></div></div>`));
+      }
+      ddOpen(
+        `Saldo · ${saldo >= 0 ? '▲' : '▼'} ${hrs(diff)}`,
+        isRunning ? 'gerechnet bis heute — nicht bis zum Ende des Zeitraums' : ddPeriodLabel(),
+        ddSum([['Gearbeitet', hrs(d.istHours)], [isRunning ? 'Fällig bis heute' : 'Fällig gesamt', hrs(basis)], ['Differenz', (saldo >= 0 ? '+' : '−') + hrs(diff)]])
+        + `<p class="dd-p">${verdict}</p>`
+        + extras.join('')
+      );
+    }
+
+    function ddExtra() {
+      const d = siCompute(siState.period);
+      const zusatz = d.zusatz.slice().sort((a, b) => a.date.localeCompare(b.date));
+      const list = zusatz.reverse().map(r => ddShiftRow(r, { day: true }));
+      ddOpen(
+        `Ohne Plan · ${hrs(d.zusatzHours)}`,
+        `${zusatz.length} ${zusatz.length === 1 ? 'Schicht' : 'Schichten'}, die nicht im Kalender stehen`,
+        ddSum([['Stunden', hrs(d.zusatzHours)], ['Trinkgeld', eur(zusatz.reduce((s, r) => s + Number(r.tips || 0), 0))]])
+        + (list.length ? list.join('') : ddEmptyWithHint('➕', 'Keine Zusatzschichten', 'Alles, was du gearbeitet hast, stand auch im Plan.', siState.period)),
+        'extra'
+      );
+    }
+
+    function ddOpenShifts() {
+      const d = siCompute(siState.period);
+      const offen = d.offen.slice().sort((a, b) => a.start.localeCompare(b.start));
+      const rows = offen.map(e => `<div class="dd-row" role="button" tabindex="0" data-plan="${e.start}">
+        <div class="dd-row-main">
+          <div class="dd-row-day">${weekdayName(e.start)}, ${dateFmt(e.start).split(' ').slice(1).join(' ')}</div>
+          <div class="dd-row-meta">${e.summary || 'Schicht'}</div>
+        </div>
+        <div class="dd-row-val"><div class="dd-row-h">${hrs((icalDuration(e) || 0) / 60)}</div><div class="dd-row-t">fehlt</div></div>
+      </div>`);
+      ddOpen(
+        `Offen · ${hrs(d.offenHours)}`,
+        `${offen.length} geplante ${offen.length === 1 ? 'Schicht' : 'Schichten'} ohne Eintrag`,
+        (rows.length ? rows.join('') : ddEmptyWithHint('✅', 'Nichts offen', 'Alle geplanten Schichten dieses Zeitraums sind erfasst. Sauber.', siState.period)),
+        'open'
+      );
+    }
+
+    // Kachel-Drilldowns: Trinkgeld, Ø/Std, Beste Woche, Anzahl
+    function ddTips() {
+      const rows = [...state.rows].sort((a, b) => Number(b.tips) - Number(a.tips));
+      const total = rows.reduce((s, r) => s + Number(r.tips || 0), 0);
+      const list = rows.filter(r => Number(r.tips) > 0).slice(0, 100).map(r => ddShiftRow(r, { day: true }));
+      ddOpen(
+        `Trinkgeld · ${eur(total)}`,
+        rows.length ? `aus ${rows.length} Schichten · sortiert nach Betrag` : 'noch keine Daten',
+        ddSum([['Gesamt', eur(total)], ['Bester Tag', rows.length ? eur(Number(rows[0].tips) || 0) : '—']])
+        + ddRowsOrEmpty(list, '💰', 'Noch kein Trinkgeld', 'Trag im Tab „Eintragen" ein Trinkgeld ein — dann erscheint es hier sortiert.')
+      );
+    }
+
+    function ddRate() {
+      const totalH = state.rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0);
+      const totalT = state.rows.reduce((s, r) => s + Number(r.tips || 0), 0);
+      const rate = totalH ? totalT / totalH : 0;
+      const ranked = state.rows
+        .map(r => ({ ...r, rate: Number(r.actualHoursManual) ? Number(r.tips || 0) / Number(r.actualHoursManual) : 0 }))
+        .filter(r => Number(r.actualHoursManual) > 0)
+        .sort((a, b) => b.rate - a.rate);
+      const list = ranked.slice(0, 60).map(r => `<div class="dd-row" role="button" tabindex="0" data-edit="${r.date}">
+        <div class="dd-row-main">
+          <div class="dd-row-day">${weekdayName(r.date)}, ${dateFmt(r.date).split(' ').slice(1).join(' ')}</div>
+          <div class="dd-row-meta">${hrs(r.actualHoursManual)} · ${eur(r.tips)}</div>
+        </div>
+        <div class="dd-row-val"><div class="dd-row-h">${eur(r.rate)}</div></div>
+      </div>`);
+      ddOpen(
+        `Ø Trinkgeld/Std · ${eur(rate)}`,
+        'Deine besten Schichten nach Stundenlohn aus Trinkgeld',
+        ddRowsOrEmpty(list, '⚡', 'Noch keine Auswertung', 'Sobald Stunden erfasst sind, siehst du hier, welche Schicht sich am meisten gelohnt hat.')
+      );
+    }
+
+    function ddBestWeek() {
+      const groups = new Map();
+      for (const r of state.rows) {
+        const k = `${r.week.year}-KW${String(r.week.week).padStart(2, '0')}`;
+        if (!groups.has(k)) groups.set(k, { label: r.week.label, year: r.week.year, week: r.week.week, rows: [] });
+        groups.get(k).rows.push(r);
+      }
+      const arr = [...groups.values()].map(g => ({
+        ...g,
+        tips: g.rows.reduce((s, r) => s + Number(r.tips || 0), 0),
+        hours: g.rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0),
+      })).sort((a, b) => b.tips - a.tips);
+      const list = arr.map(g => `<div class="dd-row" role="button" tabindex="0" data-week="${g.year}|${g.week}">
+        <div class="dd-row-main">
+          <div class="dd-row-day">${g.label}</div>
+          <div class="dd-row-meta">${g.rows.length} Schichten · ${hrs(g.hours)}</div>
+        </div>
+        <div class="dd-row-val"><div class="dd-row-h">${eur(g.tips)}</div></div>
+      </div>`);
+      ddOpen(
+        arr.length ? `Beste Woche · ${arr[0].label}` : 'Beste Woche · —',
+        'Wochen nach Trinkgeld — tippe eine an für die Schichten',
+        ddRowsOrEmpty(list, '🏆', 'Noch keine Wochen', 'Trag ein paar Schichten ein, dann siehst du hier deine stärkste Woche.')
+      );
+    }
+
+    function ddWeekDetail(year, week) {
+      const rows = state.rows.filter(r => r.week.year === Number(year) && r.week.week === Number(week))
+        .sort((a, b) => a.date.localeCompare(b.date));
+      const h = rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0);
+      const t = rows.reduce((s, r) => s + Number(r.tips || 0), 0);
+      ddOpen(
+        `KW ${week} · ${year}`,
+        `${rows.length} ${rows.length === 1 ? 'Schicht' : 'Schichten'}`,
+        ddSum([['Stunden', hrs(h)], ['Trinkgeld', eur(t)], ['Ø/Std', eur(h ? t / h : 0)]])
+        + ddRowsOrEmpty(rows.map(r => ddShiftRow(r, { day: true })), '📅', 'Keine Schichten', 'In dieser Woche ist nichts erfasst.')
+      );
+    }
+
+    function ddShiftCount() {
+      const rows = [...state.rows].sort((a, b) => b.date.localeCompare(a.date));
+      const h = rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0);
+      const days = new Set(rows.map(r => r.date)).size;
+      ddOpen(
+        `${rows.length} Schichten`,
+        'Alle erfassten Einträge, neueste zuerst',
+        ddSum([['Stunden', hrs(h)], ['Tage', String(days)], ['Ø/Schicht', hrs(rows.length ? h / rows.length : 0)]])
+        + ddRowsOrEmpty(rows.map(r => ddShiftRow(r, { day: true })), '📋', 'Noch nichts erfasst', 'Leg im Tab „Eintragen" die erste Schicht an.')
+      );
+    }
+
+    function ddMonthly(monthKey) {
+      const rows = state.rows.filter(r => r.date.startsWith(monthKey)).sort((a, b) => a.date.localeCompare(b.date));
+      const h = rows.reduce((s, r) => s + Number(r.actualHoursManual || 0), 0);
+      const t = rows.reduce((s, r) => s + Number(r.tips || 0), 0);
+      const d = new Date(monthKey + '-15T12:00:00');
+      const name = new Intl.DateTimeFormat('de-DE', { month: 'long', year: 'numeric' }).format(d);
+      ddOpen(
+        name,
+        `${rows.length} ${rows.length === 1 ? 'Schicht' : 'Schichten'}`,
+        ddSum([['Stunden', hrs(h)], ['Trinkgeld', eur(t)], ['Brutto ≈', eur(h * 13.90)]])
+        + ddRowsOrEmpty(rows.map(r => ddShiftRow(r, { day: true })), '📅', 'Nichts erfasst', 'In diesem Monat ist keine Schicht eingetragen.')
+      );
+    }
+
+    // ── Ein globaler Klick-Handler für alle data-goto/data-edit/data-week ──
+    document.addEventListener('click', e => {
+      const goto = e.target.closest('[data-goto]');
+      if (goto) {
+        e.preventDefault();
+        const k = goto.dataset.goto;
+        if (k === 'worked') ddWorked();
+        else if (k === 'planned') ddPlanned();
+        else if (k === 'saldo') ddSaldo();
+        else if (k === 'extra') ddExtra();
+        else if (k === 'open') ddOpenShifts();
+        else if (k === 'tips') ddTips();
+        else if (k === 'rate') ddRate();
+        else if (k === 'bestweek') ddBestWeek();
+        else if (k === 'count') ddShiftCount();
+        return;
+      }
+      const week = e.target.closest('[data-week]');
+      if (week) {
+        const [y, w] = week.dataset.week.split('|');
+        ddWeekDetail(y, w);
+        return;
+      }
+      const month = e.target.closest('[data-month-detail]');
+      if (month) { ddMonthly(month.dataset.monthDetail); return; }
+      const edit = e.target.closest('[data-edit]');
+      if (edit) { ddClose(); setTimeout(() => editRow(edit.dataset.edit), 180); return; }
+      const plan = e.target.closest('[data-plan]');
+      if (plan) {
+        ddClose();
+        setTimeout(() => {
+          resetForm();
+          form.date.value = plan.dataset.plan;
+          activateTab('capture');
+          setStatus('Datum aus dem Plan übernommen — Stunden eintragen.', 'ok');
+          form.hours.focus();
+        }, 180);
+      }
+    });
 
     // Zeitraum-Umschalter
     document.querySelectorAll('#siPeriodSwitch .si-tab').forEach(btn => {
@@ -616,6 +1044,186 @@
         renderSollIst();
       });
     });
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  FORTSCHRITT: Wochenziel-Ring, Streak, Erfolge
+    //  Aus der älteren App-Version zurückgeholt (war ab v2.1 nicht mehr drin).
+    //  Daten liegen in localStorage — keine Migration nötig, bestehende
+    //  Erfolge werden beim ersten Start als „gesehen" nachgezogen.
+    // ═══════════════════════════════════════════════════════════════════
+    const GOAL_KEY = 'azt-weekgoal';
+    const BADGE_KEY = 'azt-badges';
+
+    function getWeekGoal() {
+      const v = Number(localStorage.getItem(GOAL_KEY));
+      return v > 0 ? v : 100;
+    }
+
+    window.saveWeekGoal = function () {
+      const el = document.getElementById('weekGoal');
+      if (!el) return;
+      const v = Number(el.value);
+      if (!v || v < 10) { alert('Bitte ein Ziel ab 10 € eingeben.'); return; }
+      try { localStorage.setItem(GOAL_KEY, String(v)); } catch (e) {}
+      showToast('Wochenziel gespeichert: ' + eur(v));
+      renderProgress();
+    };
+
+    // Längste Serie aufeinanderfolgender Tage MIT Eintrag
+    function computeStreak(rows) {
+      if (!rows.length) return { current: 0, best: 0 };
+      const dates = [...new Set(rows.map(r => r.date))].sort();
+      let best = 1, run = 1;
+      for (let i = 1; i < dates.length; i++) {
+        const prev = new Date(dates[i - 1] + 'T12:00:00');
+        const cur = new Date(dates[i] + 'T12:00:00');
+        const diff = Math.round((cur - prev) / 86400000);
+        if (diff === 1) { run++; } else { run = 1; }
+        best = Math.max(best, run);
+      }
+      const today = new Date(); today.setHours(12, 0, 0, 0);
+      const last = new Date(dates[dates.length - 1] + 'T12:00:00');
+      const gapToday = Math.round((today - last) / 86400000);
+      let current = 0;
+      if (gapToday <= 1) {
+        current = 1;
+        for (let i = dates.length - 1; i > 0; i--) {
+          const a = new Date(dates[i - 1] + 'T12:00:00');
+          const b = new Date(dates[i] + 'T12:00:00');
+          if (Math.round((b - a) / 86400000) === 1) current++;
+          else break;
+        }
+      }
+      return { current, best };
+    }
+
+    function computeBadges(rows) {
+      const tips = rows.map(r => Number(r.tips) || 0);
+      const total = tips.reduce((a, b) => a + b, 0);
+      const maxDay = Math.max(0, ...tips);
+      const maxRate = Math.max(0, ...rows.map(r => {
+        const h = Number(r.actualHoursManual) || 0;
+        return h ? (Number(r.tips) || 0) / h : 0;
+      }));
+      const streak = computeStreak(rows);
+      const days20 = tips.filter(t => t >= 20).length;
+      const days30 = tips.filter(t => t >= 30).length;
+
+      // Trinkgeld je Kalenderwoche
+      const weeks = {};
+      for (const r of rows) {
+        const d = new Date(r.date + 'T12:00:00');
+        const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+        const day = t.getUTCDay() || 7;
+        t.setUTCDate(t.getUTCDate() + 4 - day);
+        const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1));
+        const kw = Math.ceil(((t - y0) / 86400000 + 1) / 7);
+        const k = t.getUTCFullYear() + '-' + kw;
+        weeks[k] = (weeks[k] || 0) + (Number(r.tips) || 0);
+      }
+      const maxWeek = Math.max(0, ...Object.values(weeks));
+      const leaveDays = leaveCache.length;
+
+      return [
+        { id: 'first',    ico: '🌱', name: 'Erster Eintrag',     hint: '1 Tag erfasst',     ok: rows.length >= 1 },
+        { id: 'd10',      ico: '📝', name: '10 Schichten',       hint: '10 Tage erfasst',   ok: rows.length >= 10 },
+        { id: 'd50',      ico: '💪', name: '50 Schichten',       hint: '50 Tage erfasst',   ok: rows.length >= 50 },
+        { id: 'd100',     ico: '🎖️', name: '100 Schichten',      hint: '100 Tage erfasst',  ok: rows.length >= 100 },
+        { id: 't100',     ico: '💯', name: '100 € Trinkgeld',    hint: 'Gesamt erreicht',   ok: total >= 100 },
+        { id: 't500',     ico: '💰', name: '500 € Trinkgeld',    hint: 'Gesamt erreicht',   ok: total >= 500 },
+        { id: 't1000',    ico: '🤑', name: '1.000 € Trinkgeld',  hint: 'Gesamt erreicht',   ok: total >= 1000 },
+        { id: 't2500',    ico: '💎', name: '2.500 € Trinkgeld',  hint: 'Gesamt erreicht',   ok: total >= 2500 },
+        { id: 'day20',    ico: '⭐', name: '20 € am Tag',        hint: 'Ein Tag ab 20 €',   ok: days20 >= 1 },
+        { id: 'day30',    ico: '🌟', name: '30 € am Tag',        hint: 'Ein Tag ab 30 €',   ok: days30 >= 1 },
+        { id: 'day50',    ico: '🏅', name: '50 € am Tag',        hint: 'Ein Tag ab 50 €',   ok: maxDay >= 50 },
+        { id: 'w100',     ico: '📅', name: '100-€-Woche',        hint: 'Woche ab 100 €',    ok: maxWeek >= 100 },
+        { id: 'w200',     ico: '🗓️', name: '200-€-Woche',        hint: 'Woche ab 200 €',    ok: maxWeek >= 200 },
+        { id: 'streak7',  ico: '🔥', name: '7 Tage Serie',       hint: '7 Tage am Stück',   ok: streak.best >= 7 },
+        { id: 'streak30', ico: '🚀', name: '30 Tage Serie',      hint: '30 Tage am Stück',  ok: streak.best >= 30 },
+        { id: 'rate3',    ico: '⚡', name: '3 €/Stunde',         hint: 'Bester Schnitt',    ok: maxRate >= 3 },
+        { id: 'rate4',    ico: '⚡', name: '4 €/Stunde',         hint: 'Bester Schnitt',    ok: maxRate >= 4 },
+        { id: 'leave',    ico: '🏖️', name: 'Urlaub erfasst',     hint: 'Erster Urlaubstag', ok: leaveDays >= 1 },
+      ];
+    }
+
+    function checkNewBadges(all) {
+      let seen = [];
+      try { seen = JSON.parse(localStorage.getItem(BADGE_KEY) || '[]'); } catch (e) { seen = []; }
+      const nowEarned = all.filter(b => b.ok).map(b => b.id);
+      const fresh = all.filter(b => b.ok && !seen.includes(b.id));
+      if (fresh.length) {
+        try { localStorage.setItem(BADGE_KEY, JSON.stringify(nowEarned)); } catch (e) {}
+        const names = fresh.map(b => b.ico + ' ' + b.name).join(', ');
+        setTimeout(() => showToast('🏆 Neuer Erfolg: ' + names, 4200), 700);
+      }
+      return nowEarned;
+    }
+
+    function renderProgress() {
+      const rows = state.rows || [];
+      const all = computeBadges(rows);
+      const earnedIds = checkNewBadges(all);
+
+      // ── Wochenziel-Ring: Trinkgeld seit Montag ──
+      const goal = getWeekGoal();
+      const today = new Date();
+      const dow = (today.getDay() + 6) % 7;
+      const monday = new Date(today); monday.setDate(today.getDate() - dow); monday.setHours(0, 0, 0, 0);
+      const weekTips = rows
+        .filter(r => new Date(r.date + 'T12:00:00') >= monday)
+        .reduce((s, r) => s + (Number(r.tips) || 0), 0);
+      const pct = Math.min(1, goal ? weekTips / goal : 0);
+      const circumference = 2 * Math.PI * 52;
+
+      const fg = document.getElementById('goalRingFg');
+      if (fg) {
+        fg.style.strokeDasharray = String(circumference);
+        fg.style.strokeDashoffset = String(circumference * (1 - pct));
+        fg.style.stroke = pct >= 1 ? '#30d158' : (pct >= 0.5 ? '#0a84ff' : '#ff9f0a');
+      }
+      const valEl = document.getElementById('goalRingVal');
+      if (valEl) valEl.textContent = eur(weekTips);
+      const subEl = document.getElementById('goalRingSub');
+      if (subEl) subEl.textContent = 'von ' + eur(goal);
+
+      // ── Streak ──
+      const st = computeStreak(rows);
+      const sn = document.getElementById('streakNum');
+      if (sn) sn.textContent = String(st.current);
+      const box = document.getElementById('streakBox');
+      if (box) box.classList.toggle('cold', st.current === 0);
+      const flame = document.getElementById('streakFlame');
+      if (flame) flame.textContent = st.current > 0 ? '🔥' : '❄️';
+
+      const meta = document.getElementById('goalMeta');
+      if (meta) {
+        const remaining = Math.max(0, goal - weekTips);
+        const daysLeft = 7 - dow - 1;
+        meta.innerHTML = (pct >= 1
+          ? '✅ Wochenziel erreicht!'
+          : `Noch <strong>${eur(remaining)}</strong> bis zum Ziel`)
+          + `<br>Beste Serie: ${st.best} Tage`
+          + (daysLeft > 0 && pct < 1 ? `<br>${daysLeft} Tag${daysLeft === 1 ? '' : 'e'} diese Woche übrig` : '');
+      }
+
+      // ── Erfolge ──
+      const grid = document.getElementById('badgeGrid');
+      if (grid) {
+        grid.innerHTML = all.map(b => {
+          const earned = earnedIds.includes(b.id);
+          return `<div class="badge ${earned ? 'earned' : 'locked'}">
+            <div class="badge-ico">${b.ico}</div>
+            <div class="badge-name">${b.name}</div>
+            <div class="badge-hint">${earned ? '✓ erreicht' : b.hint}</div>
+          </div>`;
+        }).join('');
+      }
+      const bc = document.getElementById('badgeCount');
+      if (bc) bc.textContent = `${earnedIds.length}/${all.length}`;
+
+      const gi = document.getElementById('weekGoal');
+      if (gi && !gi.value) gi.value = String(goal);
+    }
 
     function renderStats(rows, groups) {
       const totalHours = rows.reduce((sum, row) => sum + Number(row.actualHoursManual), 0);
@@ -632,12 +1240,12 @@
       // „Gearbeitet"). Statt der Doppelung zeigen wir den Verdienst.
       const ovStats = document.getElementById('overviewStats');
       if (ovStats) ovStats.innerHTML = [
-        ['Trinkgeld', eur(totalTips), 'Gesammelt', 'accent'],
-        ['Ø Trinkgeld/Std', eur(avgTipsHour), 'Durchschnitt', ''],
-        ['Beste Woche', bestWeek ? bestWeek.label : '—', bestWeek ? eur(bestWeek.tips) : 'Noch keine Daten', ''],
-        ['Schichten', String(rows.length), 'Alle Einträge', ''],
-      ].map(([label, value, hint, cls]) =>
-        `<div class="qs-cell">
+        ['Trinkgeld', eur(totalTips), 'Gesammelt · antippen', 'accent', 'tips'],
+        ['Ø Trinkgeld/Std', eur(avgTipsHour), 'Durchschnitt · antippen', '', 'rate'],
+        ['Beste Woche', bestWeek ? bestWeek.label : '—', bestWeek ? eur(bestWeek.tips) : 'Noch keine Daten', '', 'bestweek'],
+        ['Schichten', String(rows.length), 'Alle Einträge · antippen', '', 'count'],
+      ].map(([label, value, hint, cls, goto]) =>
+        `<div class="qs-cell is-tap has-chev" role="button" tabindex="0" data-goto="${goto}">
           <div class="qs-label">${label}</div>
           <div class="qs-value ${cls}">${value}</div>
           <div class="qs-hint">${hint}</div>
@@ -782,7 +1390,7 @@
           leaveCell = `${parts.join(' + ')}<br><span style="font-size:11px;color:var(--muted);">${hrs(hLeave)}</span>`;
         }
 
-        return '<tr><td>' + monthName(m) + '</td>'
+        return '<tr class="month-row" data-month-detail="' + m + '" role="button" tabindex="0" title="Antippen für die Schichten dieses Monats"><td>' + monthName(m) + '</td>'
           + '<td class="right">' + hrs(hWork) + (hLeave ? '<br><span style="font-size:11px;color:#0a84ff;">+' + hrs(hLeave) + '</span>' : '') + '</td>'
           + '<td class="right">' + leaveCell + '</td>'
           + '<td class="right">' + eurFmt(t) + '</td>'
@@ -1035,14 +1643,17 @@
       syncTrendControls(rows, groups);
       renderSollIst();
       renderStats(rows, groups);
+      renderProgress();
       renderMonthlyEarnings(rows);
       renderTrendChart(getTrendRows(rows));
 
-      // Week comparison bars
+      // Day tiles + Week cards + Prognose — entfernt (auf Wunsch), ersetzt durch Kalender-Tab
+
+      // Wochenvergleich: Balken sind antippbar → Schichten der Woche
       const maxWeekHours = Math.max(...groups.map(group => group.hours), 0) || 1;
       const maxWeekTips = Math.max(...groups.map(group => group.tips), 0) || 1;
       document.getElementById('weekBars').innerHTML = groups.slice().reverse().map(group =>
-        `<div class="bar-row">
+        `<div class="bar-row is-tap" role="button" tabindex="0" data-week="${group.year}|${group.week}" title="Antippen für die Schichten">
           <div class="bar-label">${group.label}</div>
           <div>
             <div class="bar-track" title="${hrs(group.hours)}"><div class="bar-fill" style="width:${(group.hours / maxWeekHours) * 100}%"></div></div>
@@ -1051,8 +1662,6 @@
           <div class="bar-value">${hrs(group.hours)}<br>${eur(group.tips)}</div>
         </div>`
       ).join('') || '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Noch keine Wochen</div></div>';
-
-      // Day tiles + Week cards + Prognose — entfernt (auf Wunsch), ersetzt durch Kalender-Tab
 
       // Table
       document.getElementById('tableBody').innerHTML = rows.slice().reverse().map(row =>
@@ -1316,23 +1925,13 @@
       return true;
     }
 
-    // Ab welcher Dauer ein Termin als Schicht gilt (einstellbar, Default 4 h)
+    // Ab welcher Dauer ein Termin als Schicht gilt.
+    // FEST auf 4 h — bewusst nicht mehr einstellbar: der Kalender-Link ist der
+    // Arbeitskalender (Tanda/Google), da stehen nur echte Schichten drin. Kurze
+    // Termine werden weiterhin über die Uhrzeit-Prüfung (Start+Ende) ausgefiltert.
     function icalMinShiftMin() {
-      try {
-        const v = Number(localStorage.getItem(ICAL_MIN_KEY));
-        if (v >= 1 && v <= 16) return Math.round(v * 60);
-      } catch (e) {}
       return 240;
     }
-    window.saveIcalMinShift = function () {
-      const inp = document.getElementById('icalMinShift');
-      if (!inp) return;
-      const v = Number(String(inp.value).replace(',', '.'));
-      if (!(v >= 1 && v <= 16)) { icalStatusAttr('Mindestdauer muss zwischen 1 und 16 Stunden liegen.', 'error'); return; }
-      try { localStorage.setItem(ICAL_MIN_KEY, String(v)); localStorage.removeItem(ICAL_CACHE_KEY); } catch (e) {}
-      icalStatusAttr(`Mindestdauer auf ${v} h gesetzt.`, 'ok');
-      icalFetch(true).then(() => renderCalendar());
-    };
 
     function hm(min) { return min == null ? '' : `${pad2(Math.floor(min / 60))}:${pad2(min % 60)}`; }
 
@@ -1569,8 +2168,6 @@
     function initIcalSettings() {
       const inp = document.getElementById('icalUrl');
       if (inp && !inp.value) inp.value = getIcalUrl();
-      const minInp = document.getElementById('icalMinShift');
-      if (minInp && !minInp.value) minInp.value = String(icalMinShiftMin() / 60);
     }
 
     // ── Diagnose: zeigt, was im Feed WIRKLICH steckt ──
@@ -2150,9 +2747,31 @@
         if (raw) return setStatus('Trinkgeld: Komma oder Punkt als Dezimaltrenner nutzen.', 'error');
         tips = 0;
       }
-      await db.entries.put({ date, actualHoursManual: hours, tips, note: note || '' });
+
+      // ── Update bestehender Eintrag? ──
+      // editingDate ist der ursprüngliche Datums-Schlüssel (Primary Key in Dexie).
+      // Ändert der Nutzer beim Bearbeiten das Datum (z. B. Sonntag → Montag), muss
+      // der ALTE Eintrag gelöscht und der neue angelegt werden. Ohne das entstünde
+      // ein zweiter Eintrag und der alte bliebe stehen (Bug bis 11/2026).
+      const oldDate = state.editingDate;
+      const isEdit = !!oldDate;
+      const dateChanged = isEdit && oldDate !== date;
+
+      if (isEdit && dateChanged) {
+        // Ziel-Tag schon belegt? Dann nicht stillschweigend überschreiben.
+        const clash = state.rows.find(r => r.date === date && r.date !== oldDate);
+        if (clash) {
+          return setStatus(`Am ${dateFmt(date)} gibt es schon einen Eintrag. Bitte dort bearbeiten oder den Tag zuerst leeren.`, 'error');
+        }
+        await db.entries.put({ date, actualHoursManual: hours, tips, note: note || '' });
+        await db.entries.delete(oldDate);
+      } else {
+        // Neuer Eintrag oder Bearbeitung ohne Datumswechsel: put() reicht
+        await db.entries.put({ date, actualHoursManual: hours, tips, note: note || '' });
+      }
+
       await loadData();
-      showToast('Schicht gespeichert 😺');
+      showToast(dateChanged ? 'Schicht verschoben 😺' : (isEdit ? 'Schicht aktualisiert 😺' : 'Schicht gespeichert 😺'));
       resetForm();
     });
 
