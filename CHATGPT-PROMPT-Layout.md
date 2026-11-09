@@ -18,8 +18,7 @@ sondern ein präzises, umsetzbares Design-Konzept.
 
 ## Die App
 
-Private Zeiterfassung für einen Minijobber (Lieferdienst, 13,90 €/h). Genau ein Nutzer,
-kein Team, kein Backend. Native App auf Android (CapacitorWebView, offline, IndexedDB).
+Persönliche Zeiterfassung für einen einzelnen Nutzer. Kein Team, kein Backend. Native App auf Android (CapacitorWebView, offline, IndexedDB).
 Deutsch, Dark Mode als Standard.
 
 **Fünf Tabs (feste Bottom-Tab-Bar):**

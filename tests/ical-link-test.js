@@ -1,6 +1,6 @@
 // Test: Link-Normalisierung — welche Formen akzeptiert die App?
 const fs = require('fs');
-const src = fs.readFileSync('./src/05-app-logik.js', 'utf8');
+const src = fs.readFileSync(require('path').join(__dirname, '..', 'src', '05-app-logik.js'), 'utf8');
 const start = src.indexOf('function normalizeIcalUrl');
 const end = src.indexOf('// Einstellungen: Link speichern / entfernen');
 const fn = src.slice(start, end);

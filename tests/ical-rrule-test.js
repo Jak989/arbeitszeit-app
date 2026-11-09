@@ -1,6 +1,6 @@
 // Test: RRULE-Entfaltung, EXDATE und DURATION — die Fälle, die bei Tanda-Feeds auftreten
 const fs = require('fs');
-const src = fs.readFileSync('./src/05-app-logik.js', 'utf8');
+const src = fs.readFileSync(require('path').join(__dirname, '..', 'src', '05-app-logik.js'), 'utf8');
 const body = src.slice(src.indexOf('<script>') + 8, src.lastIndexOf('</script>'));
 const start = body.indexOf('const ICAL_KEY');
 const endIdx = body.indexOf('//  Kalender + Urlaub');

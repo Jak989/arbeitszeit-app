@@ -4,3 +4,19 @@ www/
 src/index.html
 *.apk
 src-backup-*
+
+# ── Niemals ins Repo (persönliche Daten) ──
+.DS_Store
+*.csv
+*.tsv
+*.db
+*.sqlite
+*.sqlite3
+*.xlsx
+*.apk
+*.aab
+*.keystore
+*.jks
+*.p12
+leveldb/
+src-backup-*/

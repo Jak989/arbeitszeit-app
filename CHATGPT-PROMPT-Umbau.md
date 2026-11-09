@@ -6,7 +6,7 @@ WICHTIG: Stufe 2 ist das eigentliche Ergebnis. Der ausführende Agent bekommt NU
 DIE APP
 ═══════════════════════════════════════
 
-Private Zeiterfassung für einen Minijobber (Lieferdienst, 13,90 €/h). Genau ein Nutzer, kein Team, kein Backend. Android-App auf Capacitor/WebView, offline, Daten in IndexedDB (Dexie), Deutsch, Dark Mode als Standard.
+Persönliche Zeiterfassung für einen einzelnen Nutzer. Kein Team, kein Backend. Android-App auf Capacitor/WebView, offline, Daten in IndexedDB (Dexie), Deutsch, Dark Mode als Standard.
 
 FÜNF TABS (feste Bottom-Tab-Bar):
 

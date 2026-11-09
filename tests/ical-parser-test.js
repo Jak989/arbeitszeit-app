@@ -1,6 +1,6 @@
 // Test: ICS-Parser der Arbeitszeit-App gegen realistische Google-Calendar-Exporte
 const fs = require('fs');
-const src = fs.readFileSync('./src/05-app-logik.js', 'utf8');
+const src = fs.readFileSync(require('path').join(__dirname, '..', 'src', '05-app-logik.js'), 'utf8');
 const body = src.slice(src.indexOf('<script>') + 8, src.lastIndexOf('</script>'));
 // Nur die ICS-Funktionen herausnehmen und in einen Sandkasten laden
 const start = body.indexOf('const ICAL_KEY');
