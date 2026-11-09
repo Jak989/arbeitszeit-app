@@ -29,17 +29,38 @@
       <div class="hero-top">
         <div class="eyebrow">Schichtbuch</div>
         <div class="hero-actions">
-          <button class="theme-toggle" id="themeToggle" type="button" title="Dark Mode umschalten">
-            <span class="icon" id="themeIcon">☀️</span>
-            <span id="themeLabel">Hell</span>
-          </button>
-          <button class="gear-btn" id="settingsBtn" type="button" aria-label="Einstellungen öffnen" title="Einstellungen">
-            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="3.1"/>
-              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+          <!-- Ein einziger Einstieg: Avatar. Alles andere klappt darunter auf. -->
+          <button class="avatar-btn" id="avatarBtn" type="button"
+                  aria-haspopup="menu" aria-expanded="false" aria-label="Menü öffnen">
+            <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+              <circle cx="12" cy="8.5" r="3.6"/>
+              <path d="M4.8 20c.6-3.7 3.6-6 7.2-6s6.6 2.3 7.2 6"/>
             </svg>
           </button>
         </div>
+      </div>
+
+      <!-- Ausklapp-Menü am Avatar -->
+      <div class="usermenu" id="userMenu" role="menu" hidden>
+        <button class="um-item" type="button" role="menuitem" id="umTheme">
+          <span class="um-ico" id="themeIcon">🌙</span>
+          <span class="um-text">
+            <span class="um-title">Design</span>
+            <span class="um-sub" id="themeLabel">Dunkel</span>
+          </span>
+          <span class="um-switch" id="themeSwitch" aria-hidden="true"></span>
+        </button>
+
+        <div class="um-div"></div>
+
+        <a class="um-item" href="#settings" role="menuitem" id="umSettings">
+          <span class="um-ico">⚙️</span>
+          <span class="um-text">
+            <span class="um-title">Einstellungen</span>
+            <span class="um-sub">Kalender, Trinkgeld, Backup</span>
+          </span>
+          <span class="um-chev">›</span>
+        </a>
       </div>
     </section>
 
@@ -163,13 +184,11 @@
               </div>
             </div>
 
-            <div class="goal-set">
-              <label for="weekGoal">Wochenziel (Trinkgeld)</label>
-              <div class="goal-set-row">
-                <input id="weekGoal" type="number" inputmode="numeric" min="10" step="10" placeholder="100" />
-                <button class="btn-secondary" type="button" onclick="saveWeekGoal()">Speichern</button>
-              </div>
-            </div>
+            <!-- Wochenziel wird im Avatar-Menü gesetzt — hier nur ein Verweis,
+                 damit es keinen zweiten Eingabeweg (und keine Duplikate) gibt. -->
+            <button class="goal-edit-link" type="button" onclick="openSettingsAt('goal')">
+              Wochenziel ändern
+            </button>
 
             <h3 class="ach-head">Erfolge <span class="ach-count" id="badgeCount"></span></h3>
             <div class="badges" id="badgeGrid"></div>
@@ -269,10 +288,18 @@
           </div>
         </div>
 
-        <!-- Panel: Wochenvergleich -->
+        <!-- Panel: Wochenvergleich — Grafik oben, Zahlen darunter -->
         <div class="subpanel" id="sub-compare" role="tabpanel" hidden>
           <div class="card">
             <h2>Wochenvergleich</h2>
+            <div class="wk-metric-switch" id="cmpMetricSwitch">
+              <button class="wk-metric-btn active" type="button" data-metric="tips">Trinkgeld</button>
+              <button class="wk-metric-btn" type="button" data-metric="hours">Stunden</button>
+              <button class="wk-metric-btn" type="button" data-metric="rate">Ø/Std</button>
+            </div>
+            <div class="cmp-chart-wrap">
+              <svg id="cmpChart" viewBox="0 0 400 190" preserveAspectRatio="none"></svg>
+            </div>
             <div class="bars" id="weekBars"></div>
           </div>
         </div>
@@ -377,16 +404,6 @@
         <h2>Trinkgeld einrichten</h2>
         <p class="section-copy">Einmal einrichten, danach reicht ein Tap und der Kunde scannt nur noch.</p>
 
-        <label for="tipPaypal">Dein PayPal-Link</label>
-        <input id="tipPaypal" type="text" inputmode="url" placeholder="paypal.me/DeinName" />
-
-        <label for="tipName" style="margin-top:10px;">Dein Name (optional)</label>
-        <input id="tipName" type="text" placeholder="z. B. Max" />
-
-        <div class="button-row">
-          <button class="btn-primary" type="button" onclick="saveTipSettings()">Speichern</button>
-        </div>
-        <div id="tipSetupStatus" class="status"></div>
         <details class="hint-details">
           <summary>Wo finde ich meinen PayPal-Link?</summary>
           <p>In der PayPal-App: Profil → „Geld empfangen" → dort steht dein <strong>paypal.me</strong>-Link.
@@ -430,17 +447,16 @@
         <h2>Alle Einträge</h2>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Tag</th>
-                <th>Datum</th>
-                <th class="right">Std</th>
-                <th class="right">TG</th>
-                <th>Notiz</th>
-                <th>Aktion</th>
-              </tr>
-            </thead>
-            <tbody id="tableBody"></tbody>
+              <thead>
+                <tr>
+                  <th>Tag</th>
+                  <th class="right">Std</th>
+                  <th class="right">TG</th>
+                  <th>Notiz</th>
+                  <th class="right">·</th>
+                </tr>
+              </thead>
+              <tbody id="tableBody"></tbody>
           </table>
         </div>
       </div>
@@ -509,13 +525,35 @@
         <div id="csvImportStatus" class="status"></div>
       </div>
 
-      <div class="set-block">
+      <div class="set-block" id="setGoal">
         <h3 class="set-h3">Wochenziel</h3>
         <p class="set-hint">Trinkgeld-Ziel pro Woche (Montag bis Sonntag).</p>
         <div class="goal-set-row">
-          <input id="weekGoal2" type="number" inputmode="numeric" min="10" step="10" placeholder="100" />
-          <button class="btn-secondary" type="button" onclick="saveWeekGoalFromSettings()">Speichern</button>
+          <input id="weekGoal" type="number" inputmode="numeric" min="10" step="10" placeholder="100" />
+          <button class="btn-secondary" type="button" onclick="saveWeekGoal()">Speichern</button>
         </div>
+      </div>
+
+      <div class="set-block" id="setPaypal">
+        <h3 class="set-h3">Trinkgeld</h3>
+        <p class="set-hint">Einmal einrichten, danach reicht im Trinkgeld-Tab ein Tap und der Kunde scannt nur noch.</p>
+
+        <label for="tipPaypal">Dein PayPal-Link</label>
+        <input id="tipPaypal" type="text" inputmode="url" placeholder="paypal.me/DeinName" />
+
+        <label for="tipName">Dein Name (optional)</label>
+        <input id="tipName" type="text" placeholder="z. B. Max" />
+
+        <div class="button-row">
+          <button class="btn-secondary" type="button" onclick="saveTipSettings()">Speichern</button>
+        </div>
+        <div id="tipSetupStatus" class="status"></div>
+
+        <details class="hint-details">
+          <summary>Wo finde ich meinen PayPal-Link?</summary>
+          <p>In der PayPal-App: Profil → „Geld empfangen" → dort steht dein <strong>paypal.me</strong>-Link.
+          Du kannst den Namen oder die ganze Adresse eintragen — beides geht.</p>
+        </details>
       </div>
     </div>
   </div>

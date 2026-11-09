@@ -282,7 +282,6 @@
       const current = document.documentElement.getAttribute('data-theme') || 'light';
       applyTheme(current === 'dark' ? 'light' : 'dark');
     }
-    document.getElementById('themeToggle')?.addEventListener('click', toggleTheme);
 
     // ── State Persistence ──
     // ACHTUNG: activeTab wird NICHT mehr gemerkt. Die App startet immer im
@@ -323,7 +322,17 @@
     };
 
     const eur = value => new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR' }).format(Number(value) || 0);
+    // Ohne "€"-Zeichen mit Leerzeichen: spart in der Tabelle ~18px pro Spalte
+    const eurCompact = value => (Number(value) || 0).toFixed(0) + ' €';
     const hrs = value => `${(Number(value) || 0).toFixed(2).replace('.', ',')} h`;
+    // Kompaktformen für die Tabelle: "Mo." und "09.11." — das Jahr ist
+    // für die Tagesliste irrelevant und kostet 40px Spaltenbreite.
+    const weekdayShort = value => value
+      ? new Intl.DateTimeFormat('de-DE', { weekday: 'short' }).format(new Date(value + 'T12:00:00'))
+      : '—';
+    const dateShort = value => value
+      ? new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(value + 'T12:00:00'))
+      : '—';
     const dateFmt = value => value ? new Intl.DateTimeFormat('de-DE', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value + 'T12:00:00')) : '—';
     const compactDate = value => value ? new Intl.DateTimeFormat('de-DE', { day: '2-digit', month: '2-digit' }).format(new Date(value + 'T12:00:00')) : '—';
     const weekdayName = value => value ? new Intl.DateTimeFormat('de-DE', { weekday: 'long' }).format(new Date(value + 'T12:00:00')) : '';
@@ -716,6 +725,80 @@
         }
       });
     })();
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  WOCHENVERGLEICH: Grafik
+    //  Balken-Chart der letzten Wochen, umschaltbar zwischen Trinkgeld,
+    //  Stunden und Ø/Std. Zahlen stehen darunter im Wochenvergleich —
+    //  Grafik zeigt die Form, die Liste die Werte.
+    // ═══════════════════════════════════════════════════════════════════
+    let cmpMetric = 'tips';
+
+    function cmpValue(g) {
+      if (cmpMetric === 'hours') return g.hours;
+      if (cmpMetric === 'rate') return g.hours ? g.tips / g.hours : 0;
+      return g.tips;
+    }
+    function cmpFormat(v) {
+      return cmpMetric === 'hours' ? hrs(v) : eur(v);
+    }
+
+    function renderCmpChart(groups) {
+      const svg = document.getElementById('cmpChart');
+      if (!svg) return;
+      const last = groups.slice(-8);
+      if (!last.length) {
+        svg.innerHTML = '<text x="200" y="95" text-anchor="middle" fill="currentColor" opacity=".45" font-size="13">Noch keine Wochen</text>';
+        return;
+      }
+      const vals = last.map(cmpValue);
+      const maxV = Math.max(...vals, 0.0001);
+      const W = 400, H = 190, PT = 18, PB = 40, PL = 6, PR = 6;
+      const innerW = W - PL - PR;
+      const innerH = H - PT - PB;
+      const slot = innerW / last.length;
+      const bw = Math.min(slot * 0.56, 34);
+      const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const avgY = PT + innerH - (avg / maxV) * innerH;
+
+      let s = '';
+      // Null-Linie
+      s += `<line x1="${PL}" y1="${PT + innerH}" x2="${W - PR}" y2="${PT + innerH}" stroke="currentColor" stroke-opacity=".16"/>`;
+      // Durchschnitt
+      s += `<line x1="${PL}" y1="${avgY.toFixed(1)}" x2="${W - PR}" y2="${avgY.toFixed(1)}" stroke="currentColor" stroke-opacity=".3" stroke-dasharray="4 4"/>`;
+      s += `<text x="${W - PR}" y="${(avgY - 5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="currentColor" opacity=".55">Ø ${cmpFormat(avg)}</text>`;
+
+      last.forEach((g, i) => {
+        const v = vals[i];
+        const hgt = Math.max((v / maxV) * innerH, v > 0 ? 3 : 0);
+        const x = PL + slot * i + (slot - bw) / 2;
+        const y = PT + innerH - hgt;
+        const isMax = v === maxV;
+        s += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${hgt.toFixed(1)}"
+                rx="4" fill="url(#cmpGrad)" ${isMax ? 'opacity="1"' : 'opacity=".78"'}/>`;
+        s += `<text x="${(x + bw / 2).toFixed(1)}" y="${(H - PB + 15).toFixed(1)}" text-anchor="middle"
+                font-size="9.5" fill="currentColor" opacity=".6">${g.week}</text>`;
+        s += `<text x="${(x + bw / 2).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle"
+                font-size="9.5" fill="currentColor" opacity=".8" font-weight="600">${Math.round(v)}</text>`;
+      });
+
+      svg.innerHTML = `<defs>
+        <linearGradient id="cmpGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#4f86ff"/>
+          <stop offset="100%" stop-color="#0a84ff" stop-opacity=".55"/>
+        </linearGradient>
+      </defs>` + s;
+    }
+
+    // Umschalter Trinkgeld / Stunden / Ø pro Stunde
+    document.getElementById('cmpMetricSwitch')?.addEventListener('click', e => {
+      const b = e.target.closest('[data-metric]');
+      if (!b) return;
+      cmpMetric = b.dataset.metric;
+      document.querySelectorAll('#cmpMetricSwitch .wk-metric-btn').forEach(x =>
+        x.classList.toggle('active', x.dataset.metric === cmpMetric));
+      renderCmpChart(window.__cmpGroups || []);
+    });
 
     // ═══════════════════════════════════════════════════════════════════
     //  DRILL-DOWN
@@ -1165,6 +1248,12 @@
       showToast('Wochenziel gespeichert: ' + eur(v));
       renderProgress();
     };
+
+    // Der eine Wochenziel-Eingabeort liegt im Settings-Sheet
+    function syncWeekGoalField() {
+      const el = document.getElementById('weekGoal');
+      if (el && !el.value) el.value = String(getWeekGoal());
+    }
 
     // Längste Serie aufeinanderfolgender Tage MIT Eintrag
     function computeStreak(rows) {
@@ -1749,29 +1838,55 @@
       // Wochenvergleich: Balken sind antippbar → Schichten der Woche
       const maxWeekHours = Math.max(...groups.map(group => group.hours), 0) || 1;
       const maxWeekTips = Math.max(...groups.map(group => group.tips), 0) || 1;
-      document.getElementById('weekBars').innerHTML = groups.slice().reverse().map(group =>
-        `<div class="bar-row is-tap" role="button" tabindex="0" data-week="${group.year}|${group.week}" title="Antippen für die Schichten">
+      // ── Wochenvergleich: Grafik oben ──
+      window.__cmpGroups = groups;
+      renderCmpChart(groups);
+
+      const gRev = groups.slice().reverse();
+      document.getElementById('weekBars').innerHTML = gRev.map((group, gi) => {
+        // Vorwoche = der nächstältere Eintrag (Liste ist absteigend)
+        const prev = gRev[gi + 1];
+        const rate = group.hours ? group.tips / group.hours : 0;
+        const prevRate = prev && prev.hours ? prev.tips / prev.hours : null;
+        const diffTips = prev ? group.tips - prev.tips : null;
+        const deltaTxt = diffTips === null ? ''
+          : (Math.abs(diffTips) < 0.01 ? '±0 €'
+            : (diffTips > 0 ? '▲ ' + eur(diffTips) : '▼ ' + eur(Math.abs(diffTips))));
+        const deltaCls = diffTips === null ? '' : (diffTips > 0 ? 'up' : diffTips < 0 ? 'down' : 'flat');
+        const rateTxt = group.hours ? eur(rate) + '/h' : '—';
+        return `<div class="bar-row is-tap" role="button" tabindex="0" data-week="${group.year}|${group.week}" title="Antippen für die Schichten">
           <div class="bar-label">${group.label}</div>
           <div>
             <div class="bar-track" title="${hrs(group.hours)}"><div class="bar-fill" style="width:${(group.hours / maxWeekHours) * 100}%"></div></div>
             <div class="bar-track" style="margin-top:6px;" title="${eur(group.tips)}"><div class="bar-fill tips" style="width:${(group.tips / maxWeekTips) * 100}%"></div></div>
           </div>
-          <div class="bar-value">${hrs(group.hours)}<br>${eur(group.tips)}</div>
-        </div>`
-      ).join('') || '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Noch keine Wochen</div></div>';
+          <div class="bar-value">
+            <span class="bar-num">${eur(group.tips)}</span>
+            <span class="bar-sub">${hrs(group.hours)} · ${rateTxt}</span>
+            ${deltaTxt ? `<span class="bar-delta ${deltaCls}">${deltaTxt}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('') || '<div class="empty-state"><div class="empty-icon">📊</div><div class="empty-title">Noch keine Wochen</div></div>';
 
       // Table
       document.getElementById('tableBody').innerHTML = rows.slice().reverse().map(row =>
         `<tr>
-          <td>${weekdayName(row.date)}<br><span class="row-sub">${row.week.label}</span></td>
-          <td>${dateFmt(row.date)}</td>
-          <td class="right">${hrs(row.actualHoursManual)}</td>
-          <td class="right">${eur(row.tips)}</td>
-          <td>${row.note || '—'}</td>
-          <td>
+          <td class="date-cell">
+            <span class="d-week">${weekdayShort(row.date)}</span>
+            <span class="d-date">${dateShort(row.date)}</span>
+            <span class="row-sub">${row.week.label}</span>
+          </td>
+          <td class="right num-cell">${Number(row.actualHoursManual).toFixed(1).replace('.', ',')}</td>
+          <td class="right num-cell">${eurCompact(row.tips)}</td>
+          <td class="note-cell">${row.note || '—'}</td>
+          <td class="act-cell">
             <div class="row-actions">
-              <button class="btn-secondary" type="button" onclick="editRow('${row.date}')">Bearbeiten</button>
-              <button class="warn" type="button" onclick="confirmDelete('${row.date}')">Löschen</button>
+              <button class="icon-act" type="button" onclick="editRow('${row.date}')" aria-label="Bearbeiten" title="Bearbeiten">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h4.2L19 9.2a2 2 0 0 0 0-2.8l-1.4-1.4a2 2 0 0 0-2.8 0L4 15.8V20Z"/><path d="M14.6 6.6 17.4 9.4"/></svg>
+              </button>
+              <button class="icon-act danger" type="button" onclick="confirmDelete('${row.date}')" aria-label="Löschen" title="Löschen">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M9 7V4.5h6V7"/><path d="M6.5 7l1 13h9l1-13"/></svg>
+              </button>
             </div>
           </td>
         </tr>`
@@ -2775,13 +2890,86 @@
     // ═══════════════════════════════════════════════════════════════════
     //  EINSTELLUNGEN als eigenes Sheet (Header-Zahnrad, auf allen Tabs)
     // ═══════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════
+    //  AVATAR-MENÜ im Header
+    //  Ein Einstieg statt zwei Knöpfe: Avatar antippen → Design + Einstellungen.
+    //  Alle Einstellungen (Kalender-Link, Wochenziel, PayPal, Backup) leben im
+    //  Settings-Sheet — es gibt keinen zweiten Eingabeweg mehr.
+    // ═══════════════════════════════════════════════════════════════════
+    const umEl = () => document.getElementById('userMenu');
+    const avatarBtn = () => document.getElementById('avatarBtn');
+
+    function menuOpen() {
+      const m = umEl(); const b = avatarBtn();
+      if (!m || !b) return;
+      m.hidden = false;
+      m.classList.add('open');
+      b.setAttribute('aria-expanded', 'true');
+      syncThemeSwitch();
+    }
+    function menuClose() {
+      const m = umEl(); const b = avatarBtn();
+      if (!m || !b) return;
+      m.classList.remove('open');
+      b.setAttribute('aria-expanded', 'false');
+      setTimeout(() => { if (!m.classList.contains('open')) m.hidden = true; }, 160);
+    }
+    function menuToggle() {
+      const m = umEl();
+      if (!m) return;
+      if (m.classList.contains('open')) menuClose(); else menuOpen();
+    }
+
+    function syncThemeSwitch() {
+      const sw = document.getElementById('themeSwitch');
+      const dark = (document.documentElement.getAttribute('data-theme') || 'light') === 'dark';
+      if (sw) sw.classList.toggle('on', dark);
+    }
+
+    avatarBtn()?.addEventListener('click', e => { e.stopPropagation(); menuToggle(); });
+    document.getElementById('umTheme')?.addEventListener('click', e => {
+      e.stopPropagation();
+      toggleTheme();
+      syncThemeSwitch();
+    });
+    document.getElementById('umSettings')?.addEventListener('click', e => {
+      e.preventDefault();
+      menuClose();
+      setTimeout(() => setOpen(), 120);
+    });
+    // Klick daneben schließt
+    document.addEventListener('click', e => {
+      const m = umEl();
+      if (m && m.classList.contains('open') && !e.target.closest('#userMenu') && !e.target.closest('#avatarBtn')) {
+        menuClose();
+      }
+    });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') menuClose(); });
+
+    // Aus dem Fortschritt-Panel: „Wochenziel ändern" → Settings, zum Ziel scrollen
+    window.openSettingsAt = function (block) {
+      setOpen();
+      setTimeout(() => {
+        const el = document.getElementById(block === 'goal' ? 'setGoal' : block === 'paypal' ? 'setPaypal' : block);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }, 260);
+    };
+
     function setOpen() {
       const s = document.getElementById('setSheet');
       const b = document.getElementById('setBackdrop');
       if (!s || !b) return;
       initIcalSettings();
-      const wg = document.getElementById('weekGoal2');
+      const wg = document.getElementById('weekGoal');
       if (wg) wg.value = String(getWeekGoal());
+      // PayPal-Felder aus den gespeicherten Einstellungen vorbefüllen
+      try {
+        const cfg = loadTipSettings();
+        const pp = document.getElementById('tipPaypal');
+        const nm = document.getElementById('tipName');
+        if (pp && !pp.value) pp.value = cfg.paypal || '';
+        if (nm && !nm.value) nm.value = cfg.name || '';
+      } catch (_) {}
       b.classList.add('open');
       s.classList.add('open');
       navPush(() => setCloseSilent());
@@ -2809,22 +2997,8 @@
     window.setOpen = setOpen;
     window.setClose = setClose;
 
-    document.getElementById('settingsBtn')?.addEventListener('click', setOpen);
     document.getElementById('setClose')?.addEventListener('click', setClose);
     document.getElementById('setBackdrop')?.addEventListener('click', setClose);
-
-    // Wochenziel aus dem Einstellungs-Sheet
-    window.saveWeekGoalFromSettings = function () {
-      const el = document.getElementById('weekGoal2');
-      if (!el) return;
-      const v = Number(el.value);
-      if (!v || v < 10) { alert('Bitte ein Ziel ab 10 € eingeben.'); return; }
-      try { localStorage.setItem(GOAL_KEY, String(v)); } catch (_) {}
-      showToast('Wochenziel gespeichert: ' + eur(v));
-      const mirror = document.getElementById('weekGoal');
-      if (mirror) mirror.value = String(v);
-      renderProgress();
-    };
 
     // Accordion-Verhalten (nur noch Kalender-Tab — die Analyse hat ein Untermenü)
     document.querySelectorAll('.acc-head').forEach(head => {

@@ -174,18 +174,137 @@
       align-items: center;
       gap: 8px;
       flex-shrink: 0;
-      /* Der Header ist eng: Theme-Button + Zahnrad müssen beide passen,
-         sonst schiebt der Zahnrad-Button sich aus dem Viewport (x=442 bei
-         390px Breite). min-width:0 auf dem Textteil gibt ihm den Platz. */
     }
-    .hero-top > div:first-child { min-width: 0; }
-    .eyebrow { flex: 1 1 auto; min-width: 0; }
+    .hero-top { position: relative; }
+    .hero { position: relative; }
 
-    /* Auf schmalen Geräten nur das Symbol, Text weg */
-    @media (max-width: 430px) {
-      .theme-toggle #themeLabel { display: none; }
-      .theme-toggle { padding: 7px 10px; }
+    /* ── Avatar als einziger Einstieg oben rechts ──
+       Ersetzt Theme-Pille + Zahnrad. Ein Knopf, zwei Ebenen dahinter. */
+    .avatar-btn {
+      width: 40px;
+      height: 40px;
+      min-width: 40px;
+      min-height: 40px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: linear-gradient(135deg, rgba(10,132,255,.16), rgba(10,132,255,.05));
+      color: var(--accent);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: manipulation;
+      transition: background .18s ease, transform .16s var(--spring-out), border-color .18s ease;
     }
+    .avatar-btn svg { width: 21px; height: 21px; display: block; }
+    .avatar-btn:active { transform: scale(.92); }
+    .avatar-btn[aria-expanded="true"] {
+      border-color: var(--accent);
+      background: rgba(10,132,255,.22);
+    }
+    .avatar-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    /* ── Ausklapp-Menü ── */
+    .usermenu {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 16px;
+      width: min(268px, calc(100vw - 48px));
+      padding: 6px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: var(--card);
+      box-shadow: 0 16px 40px rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.14);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      z-index: 80;
+      transform-origin: top right;
+      animation: umIn .16s var(--spring-out, ease-out) both;
+    }
+    .usermenu[hidden] { display: none; }
+    @keyframes umIn {
+      from { opacity: 0; transform: scale(.94) translateY(-4px); }
+      to   { opacity: 1; transform: scale(1) translateY(0); }
+    }
+
+    .um-item {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      width: 100%;
+      padding: 10px 10px;
+      min-height: 48px;
+      border: none;
+      border-radius: 11px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      text-align: left;
+      text-decoration: none;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .14s ease;
+    }
+    .um-item:active { background: rgba(127,127,127,.18); }
+    .um-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+    .um-ico {
+      font-size: 17px;
+      line-height: 1;
+      width: 20px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+    .um-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+    .um-title { font-size: 14px; font-weight: 650; line-height: 1.2; }
+    .um-sub { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
+    .um-chev { color: var(--muted); font-size: 17px; flex-shrink: 0; }
+    .um-div { height: 1px; margin: 4px 8px; background: var(--line); }
+
+    /* Kleiner Schalter für den Dark Mode */
+    .um-switch {
+      position: relative;
+      width: 38px;
+      height: 22px;
+      flex-shrink: 0;
+      border-radius: 999px;
+      background: rgba(127,127,127,.32);
+      transition: background .2s ease;
+    }
+    .um-switch::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 18px; height: 18px;
+      border-radius: 999px;
+      background: #fff;
+      box-shadow: 0 1px 3px rgba(0,0,0,.3);
+      transition: transform .2s var(--spring-out, ease-out);
+    }
+    .um-switch.on { background: var(--accent); }
+    .um-switch.on::after { transform: translateX(16px); }
+
+    /* Wochenziel-Verweis im Fortschritt-Panel */
+    .goal-edit-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      margin-top: 4px;
+      padding: 6px 2px;
+      min-height: 32px;
+      border: none;
+      background: none;
+      color: var(--accent);
+      font: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .goal-edit-link::after { content: '›'; font-size: 15px; opacity: .7; }
+    .goal-edit-link:active { opacity: .6; }
 
     /* ── Zahnrad: Einstellungen, in jedem Tab erreichbar ──
        Bewusst leise: gleiche Pillenform wie der Theme-Schalter, nur Icon. */
@@ -1855,6 +1974,60 @@
     .week-card .mini { color: var(--muted); font-size: 13px; margin-top: 6px; }
 
     /* ── iOS-style Table ── */
+    /* ── Wochenvergleich: Grafik + Zahlen ────────────────────────────
+       Grafik oben zeigt die Form, die Liste darunter die Werte mit Delta
+       zur Vorwoche. Umschalter analog zum Verlauf-Panel. */
+    .wk-metric-switch {
+      display: inline-flex;
+      gap: 2px;
+      padding: 3px;
+      margin-bottom: 12px;
+      border-radius: 10px;
+      background: rgba(127,127,127,.14);
+    }
+    .wk-metric-btn {
+      padding: 6px 13px;
+      min-height: 32px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      font-size: 12.5px;
+      font-weight: 600;
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      transition: background .16s ease, color .16s ease;
+    }
+    .wk-metric-btn.active {
+      background: var(--card);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,.18);
+    }
+
+    .cmp-chart-wrap {
+      margin: 2px 0 14px;
+      padding: 6px 0 0;
+      color: var(--text);
+    }
+    #cmpChart { width: 100%; height: 168px; display: block; overflow: visible; }
+
+    .bar-row { padding: 6px 0; }
+    .bar-value { display: flex; flex-direction: column; gap: 1px; align-items: flex-end; }
+    .bar-num { font-size: 13.5px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+    .bar-sub { font-size: 10.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .bar-delta {
+      font-size: 10.5px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      padding: 1px 5px;
+      border-radius: 999px;
+      margin-top: 2px;
+    }
+    .bar-delta.up { color: var(--accent-2, #30d158); background: rgba(48,209,88,.13); }
+    .bar-delta.down { color: #ff9f0a; background: rgba(255,159,10,.13); }
+    .bar-delta.flat { color: var(--muted); background: rgba(127,127,127,.14); }
+
     .table-wrap {
       overflow: auto;
       -webkit-overflow-scrolling: touch;
@@ -1870,7 +2043,18 @@
     table {
       width: 100%;
       border-collapse: collapse;
-      min-width: 760px;
+      /* min-width:760px war die Ursache für das Links-Rechts-Scrollen:
+         bei 390px Bildschirm passte nur die Hälfte. Jetzt passt sich die
+         Tabelle der Breite an; lange Spalten werden stattdessen gekürzt
+         und die Notiz bricht um statt die Tabelle zu sprengen. */
+      min-width: 0;
+      table-layout: auto;
+    }
+    @media (max-width: 560px) {
+      th, td { padding: 10px 7px; font-size: 12.5px; }
+      /* Aktion-Spalte: Buttons untereinander statt nebeneinander */
+      .row-actions { flex-direction: column; gap: 4px; align-items: stretch; }
+      .row-actions button { padding: 6px 8px; font-size: 11.5px; min-height: 32px; }
     }
     th, td {
       text-align: left;
@@ -1880,6 +2064,49 @@
       vertical-align: middle;
       transition: border-color .3s ease;
     }
+    /* Notiz: darf umbrechen, aber nicht die Tabelle aufblähen */
+    td.note-cell {
+      max-width: 150px;
+      overflow-wrap: anywhere;
+      line-height: 1.32;
+    }
+    @media (max-width: 560px) {
+      td.note-cell { max-width: 88px; font-size: 11.5px; }
+    }
+    .num-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    /* ── Tabellen-Layout für schmale Screens ──────────────────────────
+       Vorher: min-width 760px → Links-Rechts-Scrollen. Jetzt fünf
+       kompakte Spalten, Datum zweizeilig, Aktionen als Icon-Buttons.
+       Das spart ~200px und passt bei 390px ohne horizontales Scrollen. */
+    .date-cell { white-space: nowrap; }
+    .date-cell .d-week { font-weight: 600; }
+    .date-cell .d-date { margin-left: 3px; font-variant-numeric: tabular-nums; }
+    .date-cell .row-sub { display: block; font-size: 10px; color: var(--muted); line-height: 1.2; }
+
+    .row-actions { display: flex; gap: 4px; justify-content: flex-end; }
+    .icon-act {
+      width: 32px;
+      height: 32px;
+      min-width: 32px;
+      min-height: 32px;
+      display: grid;
+      place-items: center;
+      padding: 0;
+      border-radius: 9px;
+      border: 1px solid var(--line);
+      background: rgba(127,127,127,.10);
+      color: var(--text);
+      cursor: pointer;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-appearance: none;
+      appearance: none;
+      touch-action: manipulation;
+      transition: background .15s ease, color .15s ease, transform .13s var(--spring-out);
+    }
+    .icon-act svg { width: 16px; height: 16px; display: block; }
+    .icon-act:active { transform: scale(.9); }
+    .icon-act.danger { color: #ff453a; border-color: rgba(255,69,58,.28); background: rgba(255,69,58,.10); }
     tr:last-child td { border-bottom: none; }
     th {
       position: sticky;
